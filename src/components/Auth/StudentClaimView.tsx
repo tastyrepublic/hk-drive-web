@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { auth, db } from '../../firebase';
 import { 
-  createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
   sendPasswordResetEmail,
   signOut,
   RecaptchaVerifier,
   signInWithPhoneNumber,
+  EmailAuthProvider,
+  linkWithCredential,
+  deleteUser,
   type ConfirmationResult
 } from 'firebase/auth';
 import { doc, runTransaction, getDoc } from 'firebase/firestore'; 
@@ -56,174 +58,195 @@ export function StudentClaimView({
   const [resetSent, setResetSent] = useState(false);
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
-  // --- 0. AUTO-RESTORE STEP 2 (Fixes the Loop) ---
+  // --- 0. AUTO-RESTORE STEP 2 ---
   useEffect(() => {
+    if (isAlreadyClaimed) return;
     const checkCurrentAuth = async () => {
         const user = auth.currentUser;
         if (user) {
-            // Check if user is logged in via Phone, but NOT via Email
             const isPhone = user.providerData.some(p => p.providerId === 'phone');
             const isEmail = user.providerData.some(p => p.providerId === 'password');
-
-            // If we have phone but no email, we are mid-setup. Restore Step 2.
             if (isPhone && !isEmail) {
                 setStep(2);
             }
         }
     };
     checkCurrentAuth();
-  }, []);
+  }, [isAlreadyClaimed]);
 
-  // --- 1. INITIALIZE RECAPTCHA ---
+  // --- HELPER: ROBUST RECAPTCHA INIT ---
+  const ensureRecaptcha = () => {
+    if (recaptchaVerifierRef.current) return recaptchaVerifierRef.current;
+    
+    // Safety check: ensure element exists (prevents "Already Claimed" crash)
+    const container = document.getElementById('recaptcha-container');
+    if (container) {
+        try {
+            recaptchaVerifierRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', {
+                'size': 'invisible',
+                'callback': () => {} 
+            });
+            return recaptchaVerifierRef.current;
+        } catch (e) {
+            console.error("Recaptcha init error:", e);
+            return null;
+        }
+    }
+    return null;
+  };
+
+  // Initial Load
   useEffect(() => {
+    if (isAlreadyClaimed) return;
     auth.languageCode = 'zh-HK'; 
-    if (!recaptchaVerifierRef.current) {
-        recaptchaVerifierRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', {
-            'size': 'invisible',
-            'callback': () => {}
-        });
-    }
-  }, []);
+    ensureRecaptcha();
+  }, [isAlreadyClaimed]);
 
-  useEffect(() => {
+  useEffect(() => { 
     if (status !== 'idle' && status !== 'success') { 
-      const timer = setTimeout(() => setStatus('idle'), 2000);
-      return () => clearTimeout(timer);
-    }
+      const timer = setTimeout(() => setStatus('idle'), 2000); 
+      return () => clearTimeout(timer); 
+    } 
   }, [status]);
 
-  // --- OTP AUTO SUBMIT ---
-  useEffect(() => {
-    const code = otpDigits.join('');
+  // OTP Auto Submit
+  useEffect(() => { 
+    const code = otpDigits.join(''); 
     if (code.length === 6 && step === 1.5 && status !== 'success' && !loading) {
-        handleVerifyCode(code);
+        handleVerifyCode(code); 
     }
   }, [otpDigits, step, status, loading]);
 
-  // --- 2. SEND SMS ---
+  // --- 1. SEND SMS ---
   const handleSendCode = async (e?: React.FormEvent) => {
     if(e) e.preventDefault();
-    setLoading(true);
+    setLoading(true); 
     setError('');
     
     const inputClean = validationPhone.replace(/\D/g, '');
     const storedClean = studentData.phone ? studentData.phone.replace(/\D/g, '') : '';
     
-    if (inputClean !== storedClean && !storedClean.includes(inputClean)) {
-        setLoading(false);
-        setStatus('error');
-        setError("Phone number does not match our records.");
-        return;
+    if (inputClean !== storedClean && !storedClean.includes(inputClean)) { 
+        setLoading(false); 
+        setStatus('error'); 
+        setError("Phone number does not match our records."); 
+        return; 
     }
 
     const formattedPhone = formatPhoneForFirebase(validationPhone);
-    const appVerifier = recaptchaVerifierRef.current;
+    const appVerifier = ensureRecaptcha();
+
+    if (!appVerifier) {
+        setLoading(false);
+        setError("Security check failed. Please refresh.");
+        return;
+    }
 
     try {
-        if (!appVerifier) throw new Error("Recaptcha not initialized");
         const confirmation = await signInWithPhoneNumber(auth, formattedPhone, appVerifier);
-        setConfirmationResult(confirmation);
-        setStatus('success');
-        setStep(1.5);
+        setConfirmationResult(confirmation); 
+        setStatus('success'); 
+        setStep(1.5); 
         setOtpDigits(['', '', '', '', '', '']);
     } catch (err: any) {
         console.error(err);
         setStatus('error');
-        if (recaptchaVerifierRef.current) recaptchaVerifierRef.current.clear(); 
+        // Reset Recaptcha on failure so it can be rebuilt
+        if (recaptchaVerifierRef.current) {
+            try { recaptchaVerifierRef.current.clear(); } catch(e) {}
+            recaptchaVerifierRef.current = null;
+        }
+
         if (err.code === 'auth/invalid-phone-number') setError("Invalid phone number format.");
         else if (err.code === 'auth/too-many-requests') setError("Too many attempts. Try again later.");
         else setError("Failed to send SMS. Check connection.");
-    } finally {
-        setLoading(false);
+    } finally { 
+        setLoading(false); 
     }
   };
 
-  // --- 3. VERIFY OTP ---
+  // --- 2. VERIFY OTP ---
   const handleVerifyCode = async (code: string) => {
-    setLoading(true);
+    setLoading(true); 
     setError('');
-
     try {
         if (!confirmationResult) throw new Error("No session found");
-        
         await confirmationResult.confirm(code);
-        // Do NOT signOut here. Keep session active to prevent reset.
-
         setStatus('success');
-        setTimeout(() => {
-            setStep(2);
-            setStatus('idle');
-        }, 500); 
-
+        setTimeout(() => { setStep(2); setStatus('idle'); }, 500); 
     } catch (err: any) {
-        setStatus('error');
+        setStatus('error'); 
         setError("Incorrect code. Please try again.");
-        setOtpDigits(['', '', '', '', '', '']);
+        setOtpDigits(['', '', '', '', '', '']); 
         otpRefs.current[0]?.focus();
-    } finally {
-        setLoading(false);
+    } finally { 
+        setLoading(false); 
     }
   };
 
-  const handleOtpChange = (index: number, value: string) => {
-    if (!/^\d*$/.test(value)) return;
-    if (status === 'success' || status === 'error') setStatus('idle');
-    const newOtp = [...otpDigits];
-    newOtp[index] = value.substring(value.length - 1);
-    setOtpDigits(newOtp);
-    if (value && index < 5) otpRefs.current[index + 1]?.focus();
-  };
-
-  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace' && !otpDigits[index] && index > 0) otpRefs.current[index - 1]?.focus();
-  };
-
-  const handleOtpPaste = (e: React.ClipboardEvent) => {
-    e.preventDefault();
-    if (status === 'success' || status === 'error') setStatus('idle');
-    const pastedData = e.clipboardData.getData('text').slice(0, 6).replace(/\D/g, '');
-    if (pastedData) {
-        const newOtp = [...otpDigits];
-        pastedData.split('').forEach((char, i) => { if (i < 6) newOtp[i] = char; });
-        setOtpDigits(newOtp);
-        const nextIndex = Math.min(pastedData.length, 5);
-        otpRefs.current[nextIndex]?.focus();
-    }
-  };
-
-  // --- 4. FINAL CLAIM ---
+  // --- 3. FINAL CLAIM (FIXED SESSION LOGIC) ---
   const handleClaim = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
     try {
-        // --- CLEAN UP GHOST USER ---
         const currentUser = auth.currentUser;
-        if (currentUser) {
-            // If logged in via Phone, delete it to allow fresh email creation
-            const isPhoneOnly = currentUser.providerData.length === 1 && currentUser.providerData[0].providerId === 'phone';
-            if (isPhoneOnly) {
-                await currentUser.delete(); 
-            } else {
-                await signOut(auth);
-            }
+        
+        // If session is lost, Auto-Reset to Step 1 immediately
+        if (!currentUser) {
+            setStep(1); 
+            setError("Session expired. Please verify phone again.");
+            setLoading(false);
+            return;
         }
 
         let user;
+
         if (isLoginMode) {
+            // --- LOGIN MODE: Clean Ghost -> Login Real ---
+            const isPhoneOnly = currentUser.providerData.length === 1 && currentUser.providerData[0].providerId === 'phone';
+            
+            if (isPhoneOnly) {
+                try {
+                    await deleteUser(currentUser);
+                } catch (delErr) {
+                    console.warn("Ghost cleanup failed (harmless if stale):", delErr);
+                    await signOut(auth); // Fallback to ensure clean slate
+                }
+            } else {
+                await signOut(auth);
+            }
+
+            // Sign In
             const userCredential = await signInWithEmailAndPassword(auth, email, password);
             user = userCredential.user;
+
+            // Teacher Check
             const teacherDoc = await getDoc(doc(db, "instructors", user.uid));
             if (teacherDoc.exists()) {
                 await signOut(auth); 
-                throw new Error("Teacher accounts cannot claim student profiles.");
+                // Specific error to trigger reset
+                const err = new Error("Teacher accounts cannot claim student profiles.");
+                (err as any).code = 'auth/teacher-account';
+                throw err;
             }
+
         } else {
-            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-            user = userCredential.user;
+            // --- CREATE MODE: Link Credential ---
+            try {
+                const credential = EmailAuthProvider.credential(email, password);
+                const result = await linkWithCredential(currentUser, credential);
+                user = result.user;
+            } catch (linkErr: any) {
+                if (linkErr.code === 'auth/email-already-in-use') {
+                    throw new Error("Email already in use. Please use 'Already have an account?'.");
+                }
+                throw linkErr;
+            }
         }
 
+        // --- DATABASE UPDATE ---
         const studentDocRef = doc(db, "students", inviteCode);
         const userDocRef = doc(db, "users", user.uid);
 
@@ -251,48 +274,51 @@ export function StudentClaimView({
 
         setStatus('success');
         setTimeout(() => onClaimSuccess(), 800);
+
     } catch (err: any) {
         setStatus('error');
-        if (err.code === 'auth/requires-recent-login') {
-             setError("Session timed out. Please verify phone again.");
-             setStep(1);
-        } else {
+
+        // FIX: Handle "Session Dead" errors by resetting to Step 1
+        if (err.code === 'auth/requires-recent-login' || err.code === 'auth/user-token-expired' || err.code === 'auth/teacher-account') {
+             // For teachers, we use a specific message
+             if (err.code === 'auth/teacher-account') {
+                setError("Teacher accounts cannot be linked. Please verify phone again to use a different account.");
+             } else {
+                setError("Session timed out. Please verify phone again.");
+             }
+             setStep(1); // Crucial: Reset flow
+        } 
+        else if (err.code === 'auth/credential-already-in-use') {
+             // Session is ALIVE here (Create Mode), stay on Step 2
+             setError("This email is already linked to another account.");
+        } 
+        else {
+             // Generic error
              setError(err.message.replace('Firebase: ', '').replace('auth/', ''));
+             // Double check: if user is somehow null, force reset
+             if (!auth.currentUser) setStep(1);
         }
     } finally {
         setLoading(false);
     }
   };
 
-  const handleForgotPassword = async () => {
-    if (!email) { setError("Please enter your email address first."); return; }
-    try {
-      await sendPasswordResetEmail(auth, email);
-      setResetSent(true);
-      setError('');
-      setTimeout(() => setResetSent(false), 5000);
-    } catch (err: any) {
-      setError("Failed to send reset email.");
-    }
+  // --- UI Helpers ---
+  const handleOtpChange = (index: number, value: string) => {
+    if (!/^\d*$/.test(value)) return;
+    if (status === 'success' || status === 'error') setStatus('idle');
+    const newOtp = [...otpDigits]; newOtp[index] = value.substring(value.length - 1); setOtpDigits(newOtp);
+    if (value && index < 5) otpRefs.current[index + 1]?.focus();
   };
+  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Backspace' && !otpDigits[index] && index > 0) otpRefs.current[index - 1]?.focus(); };
+  const handleOtpPaste = (e: React.ClipboardEvent) => { e.preventDefault(); if (status === 'success' || status === 'error') setStatus('idle'); const pastedData = e.clipboardData.getData('text').slice(0, 6).replace(/\D/g, ''); if (pastedData) { const newOtp = [...otpDigits]; pastedData.split('').forEach((char, i) => { if (i < 6) newOtp[i] = char; }); setOtpDigits(newOtp); const nextIndex = Math.min(pastedData.length, 5); otpRefs.current[nextIndex]?.focus(); } };
+  const handleForgotPassword = async () => { if (!email) { setError("Please enter your email address first."); return; } try { await sendPasswordResetEmail(auth, email); setResetSent(true); setError(''); setTimeout(() => setResetSent(false), 5000); } catch (err: any) { setError("Failed to send reset email."); } };
 
   const isDark = theme === 'dark';
-  const inputStyle = isDark 
-    ? "bg-black/40 border-white/10 text-white placeholder:text-white/30 focus:bg-black/60" 
-    : "bg-white/20 border-white/30 text-white placeholder:text-white/50 focus:bg-white/30";
-  const otpBoxStyle = isDark
-    ? "bg-black/50 border-white/10 text-white focus:border-white/50"
-    : "bg-white/30 border-white/40 text-white focus:border-white";
-  const getButtonClass = (disabled: boolean) => {
-    const base = "absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-xl text-white transition-all duration-300 ";
-    if (!disabled || status === 'success') return base + "bg-white/20 hover:bg-white/30 scale-100 shadow-lg active:scale-95 cursor-pointer";
-    return base + "bg-white/5 scale-90 opacity-20 grayscale cursor-not-allowed";
-  };
-  const slideVariants = {
-    enter: (direction: number) => ({ x: direction > 0 ? 50 : -50, opacity: 0 }),
-    center: { x: 0, opacity: 1 },
-    exit: (direction: number) => ({ x: direction < 0 ? 50 : -50, opacity: 0 })
-  };
+  const inputStyle = isDark ? "bg-black/40 border-white/10 text-white placeholder:text-white/30 focus:bg-black/60" : "bg-white/20 border-white/30 text-white placeholder:text-white/50 focus:bg-white/30";
+  const otpBoxStyle = isDark ? "bg-black/50 border-white/10 text-white focus:border-white/50" : "bg-white/30 border-white/40 text-white focus:border-white";
+  const getButtonClass = (disabled: boolean) => { const base = "absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-xl text-white transition-all duration-300 "; if (!disabled || status === 'success') return base + "bg-white/20 hover:bg-white/30 scale-100 shadow-lg active:scale-95 cursor-pointer"; return base + "bg-white/5 scale-90 opacity-20 grayscale cursor-not-allowed"; };
+  const slideVariants = { enter: (direction: number) => ({ x: direction > 0 ? 50 : -50, opacity: 0 }), center: { x: 0, opacity: 1 }, exit: (direction: number) => ({ x: direction < 0 ? 50 : -50, opacity: 0 }) };
   const shakeAnimation = { x: [0, -6, 6, -6, 6, 0], transition: { duration: 0.4 } };
 
   if (isAlreadyClaimed) {
@@ -314,18 +340,12 @@ export function StudentClaimView({
       <div className="absolute top-6 right-6 z-50">
          <button type="button" onClick={toggleTheme} className="p-3 rounded-full border border-gray-800 bg-slate text-textGrey transition-all shadow-xl active:scale-90">{isDark ? <Sun size={20} /> : <Moon size={20} />}</button>
       </div>
-
       <div className="w-full max-w-md flex flex-col">
         <div className="min-h-[60px] flex items-end mb-4 px-2">
             <AnimatePresence mode="wait">
-                {(error || resetSent) && (
-                    <motion.div key={error ? 'err' : 'success'} initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className={`w-full p-4 border text-[11px] font-black uppercase tracking-wider rounded-2xl text-center shadow-lg backdrop-blur-md ${error ? 'bg-statusRed/10 border-statusRed/20 text-statusRed' : 'bg-green-500/10 border-green-500/20 text-green-500'}`}>
-                        {error || "Password reset link sent! Check your inbox."}
-                    </motion.div>
-                )}
+                {(error || resetSent) && ( <motion.div key={error ? 'err' : 'success'} initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className={`w-full p-4 border text-[11px] font-black uppercase tracking-wider rounded-2xl text-center shadow-lg backdrop-blur-md ${error ? 'bg-statusRed/10 border-statusRed/20 text-statusRed' : 'bg-green-500/10 border-green-500/20 text-green-500'}`}> {error || "Password reset link sent! Check your inbox."} </motion.div> )}
             </AnimatePresence>
         </div>
-
         <motion.div layout transition={{ duration: 0.45 }} className="w-full border border-gray-800 rounded-[2.5rem] shadow-2xl overflow-hidden relative bg-slate">
             <div className="p-8">
                 <header className="text-center mb-8">
@@ -343,10 +363,19 @@ export function StudentClaimView({
                                 </div>
                                 <motion.form animate={status === 'error' ? shakeAnimation : {}} onSubmit={handleSendCode} className="relative group">
                                     <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 group-focus-within:text-white transition-colors" size={18} />
-                                    <input type="tel" required placeholder="Phone Number" value={validationPhone} onChange={e => { setValidationPhone(e.target.value); if(status !== 'idle') setStatus('idle'); }} className={`w-full pl-12 pr-14 p-4 rounded-2xl outline-none font-black text-lg transition-all border ${inputStyle}`} />
-                                    <button type="submit" disabled={!validationPhone || loading || status === 'success'} className={getButtonClass(!validationPhone || loading)}>
-                                        {loading ? <Loader2 className="animate-spin" size={20} /> : (<AnimatePresence mode="wait">{status === 'success' ? <Check size={20} /> : <ArrowRight size={20} />}</AnimatePresence>)}
-                                    </button>
+                                    <input 
+                                        type="tel" 
+                                        required 
+                                        placeholder="Phone Number" 
+                                        value={validationPhone} 
+                                        onChange={e => { 
+                                            setValidationPhone(e.target.value); 
+                                            if(status !== 'idle') setStatus('idle');
+                                            if(error) setError(''); // FIX: Clear error immediately
+                                        }} 
+                                        className={`w-full pl-12 pr-14 p-4 rounded-2xl outline-none font-black text-lg transition-all border ${inputStyle}`} 
+                                    />
+                                    <button type="submit" disabled={!validationPhone || loading || status === 'success'} className={getButtonClass(!validationPhone || loading)}> {loading ? <Loader2 className="animate-spin" size={20} /> : (<AnimatePresence mode="wait">{status === 'success' ? <Check size={20} /> : <ArrowRight size={20} />}</AnimatePresence>)} </button>
                                 </motion.form>
                             </motion.div>
                         )}
@@ -360,11 +389,7 @@ export function StudentClaimView({
                                     <p className="text-[11px] font-medium !text-white opacity-80 leading-relaxed ml-12">Sent to <span className="font-bold border-b border-white/30">{formatPhoneForFirebase(validationPhone)}</span></p>
                                 </div>
                                 <motion.div animate={status === 'error' ? shakeAnimation : {}} className="space-y-4">
-                                    <div className="flex justify-between gap-2">
-                                        {otpDigits.map((digit, index) => (
-                                            <input key={index} ref={(el) => { otpRefs.current[index] = el }} type="text" maxLength={1} value={digit} onChange={e => handleOtpChange(index, e.target.value)} onKeyDown={e => handleOtpKeyDown(index, e)} onPaste={handleOtpPaste} disabled={loading} className={`w-full aspect-[4/5] rounded-xl text-center text-xl font-black outline-none border transition-all ${otpBoxStyle}`} />
-                                        ))}
-                                    </div>
+                                    <div className="flex justify-between gap-2"> {otpDigits.map((digit, index) => ( <input key={index} ref={(el) => { otpRefs.current[index] = el }} type="text" maxLength={1} value={digit} onChange={e => handleOtpChange(index, e.target.value)} onKeyDown={e => handleOtpKeyDown(index, e)} onPaste={handleOtpPaste} disabled={loading} className={`w-full aspect-[4/5] rounded-xl text-center text-xl font-black outline-none border transition-all ${otpBoxStyle}`} /> ))} </div>
                                     {loading && (<div className="flex justify-center py-2"><Loader2 className="animate-spin text-white" size={24} /></div>)}
                                     <button type="button" onClick={() => handleSendCode()} className="text-[10px] text-white opacity-60 hover:opacity-100 underline decoration-white/30 underline-offset-4 w-full text-center">Resend Code</button>
                                 </motion.div>
@@ -390,9 +415,7 @@ export function StudentClaimView({
                                     <div className="relative group">
                                         <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 group-focus-within:text-white transition-colors" size={18} />
                                         <input type="password" required placeholder="Password" value={password} onChange={e => { setPassword(e.target.value); setStatus('idle'); }} className={`w-full pl-12 pr-14 p-4 rounded-2xl outline-none font-medium transition-all border ${inputStyle}`} />
-                                        <button disabled={!email || !password || loading || status === 'success'} type="submit" className={getButtonClass(!email || !password || loading)}>
-                                            {loading ? <Loader2 className="animate-spin" size={20} /> : (<AnimatePresence mode="wait">{status === 'success' ? <Check size={20} /> : <ArrowRight size={20} />}</AnimatePresence>)}
-                                        </button>
+                                        <button disabled={!email || !password || loading || status === 'success'} type="submit" className={getButtonClass(!email || !password || loading)}> {loading ? <Loader2 className="animate-spin" size={20} /> : (<AnimatePresence mode="wait">{status === 'success' ? <Check size={20} /> : <ArrowRight size={20} />}</AnimatePresence>)} </button>
                                     </div>
                                     <AnimatePresence mode="popLayout">{isLoginMode && (<motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0 }} className="flex justify-end pr-2 overflow-hidden"><button type="button" onClick={handleForgotPassword} className="text-[10px] font-bold !text-white opacity-80 hover:opacity-100 underline decoration-white/30 underline-offset-4">Forgot Password?</button></motion.div>)}</AnimatePresence>
                                     <div className="text-center pt-2"><button type="button" onClick={() => { setIsLoginMode(!isLoginMode); setError(''); setStatus('idle'); }} className="text-[11px] font-black uppercase tracking-tighter !text-white opacity-60 hover:text-white transition-all">{isLoginMode ? "Need a new account?" : "Already have an account?"}</button></div>
@@ -401,20 +424,10 @@ export function StudentClaimView({
                         )}
                     </AnimatePresence>
                 </div>
-                <footer className="mt-8 text-center px-4">
-                    <div className="flex items-center justify-center gap-2.5 text-textGrey"><LinkIcon size={16} className="rotate-45 opacity-70 shrink-0" /><p className="text-[11px] font-medium leading-relaxed">Linking allows you to book slots with <span className="font-black text-white whitespace-nowrap">{teacherName}</span> instantly.</p></div>
-                </footer>
+                <footer className="mt-8 text-center px-4"><div className="flex items-center justify-center gap-2.5 text-textGrey"><LinkIcon size={16} className="rotate-45 opacity-70 shrink-0" /><p className="text-[11px] font-medium leading-relaxed">Linking allows you to book slots with <span className="font-black text-white whitespace-nowrap">{teacherName}</span> instantly.</p></div></footer>
             </div>
         </motion.div>
-
-        {/* 👇 LEGAL TEXT & RECAPTCHA COMPLIANCE (Outside Card) */}
-        <div className="mt-6 text-center">
-            <p className={`text-[10px] leading-tight transition-colors ${isDark ? 'text-white/20' : 'text-black/50'}`}>
-                This site is protected by reCAPTCHA and the Google <br/>
-                <a href="https://policies.google.com/privacy" target="_blank" rel="noreferrer" className={`underline transition-colors ${isDark ? 'hover:text-white/50' : 'hover:text-black'}`}>Privacy Policy</a> and 
-                <a href="https://policies.google.com/terms" target="_blank" rel="noreferrer" className={`underline ml-1 transition-colors ${isDark ? 'hover:text-white/50' : 'hover:text-black'}`}>Terms of Service</a> apply.
-            </p>
-        </div>
+        <div className="mt-6 text-center"><p className={`text-[10px] leading-tight transition-colors ${isDark ? 'text-white/20' : 'text-black/50'}`}>This site is protected by reCAPTCHA and the Google <br/><a href="https://policies.google.com/privacy" target="_blank" rel="noreferrer" className={`underline transition-colors ${isDark ? 'hover:text-white/50' : 'hover:text-black'}`}>Privacy Policy</a> and <a href="https://policies.google.com/terms" target="_blank" rel="noreferrer" className={`underline ml-1 transition-colors ${isDark ? 'hover:text-white/50' : 'hover:text-black'}`}>Terms of Service</a> apply.</p></div>
         <style>{`.grecaptcha-badge { visibility: hidden; opacity: 0; pointer-events: none; }`}</style>
       </div>
     </div>

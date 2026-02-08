@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { auth, db } from '../../firebase';
-import { onAuthStateChanged, type User } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore'; // Added onSnapshot
 import { Loader2, Link as LinkIcon, AlertCircle, ArrowRight } from 'lucide-react';
 
 // Views
@@ -17,55 +17,99 @@ interface Props {
 }
 
 export function RootRouter({ theme, toggleTheme, showToast }: Props) {
-  // --- AUTH STATES ---
   const [user, setUser] = useState<User | null>(null);
   const [userRole, setUserRole] = useState<'teacher' | 'student' | null>(null);
   const [loading, setLoading] = useState(true);
 
   // --- INVITE STATES ---
   const [inviteData, setInviteData] = useState<any>(null);
-  
-  // FIX: Initialize to TRUE if there is a 'invite' param. 
-  // This prevents the Dashboard from loading before we check the link.
   const [inviteLoading, setInviteLoading] = useState(
     !!new URLSearchParams(window.location.search).get('invite')
   );
-  
   const [inviteError, setInviteError] = useState(false);
 
-  // --- URL PARAMS ---
   const params = new URLSearchParams(window.location.search);
   const inviteCode = params.get('invite');
   const urlToken = params.get('token'); 
 
-  // 1. ATOMIC AUTH LISTENER
+  // 1. ATOMIC AUTH LISTENER (With Realtime DB Listener)
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (u) => {
-      setLoading(true); 
+    let unsubscribeProfile: () => void;
 
+    const unsubAuth = onAuthStateChanged(auth, async (u) => {
       if (u) {
+        setUser(u);
+        
+        // Check Teacher (Single fetch is fine for teachers)
         try {
-          const teacherDoc = await getDoc(doc(db, "instructors", u.uid));
-          if (teacherDoc.exists()) {
-            setUserRole('teacher');
-          } else {
-            setUserRole('student');
-          }
-          setUser(u);
-        } catch (error) {
-          console.error("Auth routing error:", error);
-          setUser(null);
-          setUserRole(null);
+            const teacherDoc = await getDoc(doc(db, "instructors", u.uid));
+            if (teacherDoc.exists()) {
+                setUserRole('teacher');
+                setLoading(false);
+                return;
+            }
+        } catch (e) {
+            console.error("Teacher check failed", e);
         }
+
+        // Check Student (REALTIME LISTENER)
+        // This solves the "Race Condition". If the profile doesn't exist yet, we wait.
+        // As soon as it is created (Step 3), this fires and logs them in.
+        unsubscribeProfile = onSnapshot(doc(db, "users", u.uid), async (docSnap) => {
+            // A. Valid Profile Found -> Log In
+            if (docSnap.exists()) {
+                setUserRole('student');
+                setLoading(false);
+                return;
+            }
+
+            // B. No Profile Found (Possible Ghost or Just Created)
+            
+            // Check 1: Do they have a Password? (Email/Pass user)
+            // If yes, let them in temporarily (The DB profile is likely milliseconds away)
+            const hasPassword = u.providerData.some(p => p.providerId === 'password');
+            if (hasPassword) {
+                setUserRole('student');
+                setLoading(false);
+                return;
+            }
+
+            // Check 2: Are they on the Invite Page?
+            // If yes, keep them logged in (Ghost is allowed here to finish setup)
+            const isInvitePage = new URLSearchParams(window.location.search).get('invite');
+            if (isInvitePage) {
+                console.log("Ghost user waiting on invite page.");
+                setUserRole(null); // No role yet, but user stays
+                setLoading(false); // Stop spinner so Invite UI shows
+                return;
+            }
+
+            // Check 3: GHOST ON ROOT (The Bug You Feared)
+            // Phone Only + No Profile + No Invite Link = INVALID.
+            console.log("Ghost user on root detected. Cleaning up.");
+            await signOut(auth); // Kill the session
+            setUser(null);
+            setUserRole(null);
+            setLoading(false); // Stop spinner -> Show Login Screen
+
+        }, (err) => {
+            console.error("Profile listen error:", err);
+            setLoading(false);
+        });
+
       } else {
+        // Logged Out
+        if (unsubscribeProfile) unsubscribeProfile();
         setUser(null);
         setUserRole(null);
+        setLoading(false);
       }
-
-      setLoading(false); 
     });
 
-    return unsub;
+    return () => {
+        unsubAuth();
+        if (unsubscribeProfile) unsubscribeProfile();
+    };
   }, []);
 
   // 2. INVITE LINK SECURITY LOGIC
@@ -77,19 +121,15 @@ export function RootRouter({ theme, toggleTheme, showToast }: Props) {
       setInviteLoading(true);
       try {
         const studentSnap = await getDoc(doc(db, "students", inviteCode));
-        
         if (studentSnap.exists()) {
           const sData = studentSnap.data();
           const dbToken = sData.inviteToken;
-
           if (dbToken && dbToken !== urlToken) { setInviteError(true); return; }
           if (!dbToken && urlToken) { setInviteError(true); return; }
-          
           if (sData.inviteExpiresAt) {
               const expires = sData.inviteExpiresAt.toMillis ? sData.inviteExpiresAt.toMillis() : sData.inviteExpiresAt;
               if (Date.now() > expires) { setInviteError(true); return; }
           }
-
           let tName = "Instructor";
           if (sData.teacherId) {
             try {
@@ -97,12 +137,11 @@ export function RootRouter({ theme, toggleTheme, showToast }: Props) {
               if (tSnap.exists()) tName = tSnap.data().name;
             } catch (err) {}
           }
-          
           setInviteData({ 
             id: inviteCode, 
             student: sData, 
             teacherName: tName,
-            isClaimed: !!sData.uid // This flag triggers the warning
+            isClaimed: !!sData.uid 
           });
         } else {
           setInviteError(true);
@@ -114,7 +153,6 @@ export function RootRouter({ theme, toggleTheme, showToast }: Props) {
         setInviteLoading(false);
       }
     };
-    
     checkInvite();
   }, [inviteCode, urlToken, inviteData, inviteError, showToast]);
 
@@ -127,74 +165,51 @@ export function RootRouter({ theme, toggleTheme, showToast }: Props) {
     setInviteData(null);
   };
 
-  // ---------------- RENDER LOGIC ----------------
+  // --- RENDER LOGIC ---
 
-  // A. AUTH/INVITE LOADING
+  // A. LOADING SPINNER
+  // Only show if we are genuinely loading Auth or Invite data.
   if (loading || inviteLoading) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-midnight">
-        <Loader2 className="animate-spin text-neutral" size={48} />
-      </div>
-    );
+    return <div className="h-screen flex items-center justify-center bg-midnight"><Loader2 className="animate-spin text-neutral" size={48} /></div>;
   }
 
-  // B. INVITE ERROR DISPLAY
+  // B. ROLE GAP (Safety Net)
+  // If we have a user but no role...
+  if (user && !userRole) {
+     // ...and we DO have Invite Data, show the Invite Screen (Ghost User context)
+     if (inviteData) {
+        // Fall through to C
+     } else {
+        // This case should be handled by the "Ghost Cleanup" above, 
+        // but if we somehow get here, show loader instead of broken dashboard.
+        return <div className="h-screen flex items-center justify-center bg-midnight"><Loader2 className="animate-spin text-neutral" size={48} /></div>;
+     }
+  }
+
+  // C. INVITE ERROR
   if (inviteError) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-midnight">
         <div className="w-full max-w-md p-8 border border-white/10 rounded-[2.5rem] bg-slate text-center space-y-6 shadow-2xl">
-          <div className="flex justify-center">
-            <div className="p-4 rounded-full bg-statusRed/10 text-statusRed">
-                <LinkIcon size={48} className="opacity-50" />
-                <div className="absolute mt-[-20px] ml-[28px] bg-slate rounded-full p-1">
-                    <AlertCircle size={24} className="text-statusRed fill-slate" />
-                </div>
-            </div>
-          </div>
-          <div>
-            <h2 className="text-2xl font-black text-white">Link Expired</h2>
-            <p className="text-textGrey text-sm mt-2 leading-relaxed">
-              This invitation is no longer valid.
-            </p>
-          </div>
-          <button 
-            onClick={clearInviteParams} 
-            className="w-full p-4 rounded-2xl bg-white/5 text-white font-black uppercase tracking-widest hover:bg-white/10 transition-all flex items-center justify-center gap-2 group"
-          >
-            Go to Login <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
-          </button>
+          <div className="flex justify-center"><div className="p-4 rounded-full bg-statusRed/10 text-statusRed"><LinkIcon size={48} className="opacity-50" /><div className="absolute mt-[-20px] ml-[28px] bg-slate rounded-full p-1"><AlertCircle size={24} className="text-statusRed fill-slate" /></div></div></div>
+          <div><h2 className="text-2xl font-black text-white">Link Expired</h2><p className="text-textGrey text-sm mt-2 leading-relaxed">This invitation is no longer valid.</p></div>
+          <button onClick={clearInviteParams} className="w-full p-4 rounded-2xl bg-white/5 text-white font-black uppercase tracking-widest hover:bg-white/10 transition-all flex items-center justify-center gap-2 group">Go to Login <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" /></button>
         </div>
       </div>
     );
   }
 
-  // C. INVITE CLAIM VIEW (Must check this BEFORE Dashboard)
+  // D. INVITE CLAIM VIEW
   if (inviteData) {
-    return (
-      <StudentClaimView 
-        inviteCode={inviteData.id} 
-        studentData={inviteData.student} 
-        teacherName={inviteData.teacherName} 
-        theme={theme} 
-        toggleTheme={toggleTheme} 
-        isAlreadyClaimed={inviteData.isClaimed} 
-        onClaimSuccess={() => {
-          setInviteData(null);
-          clearInviteParams();
-          showToast("Account Linked Successfully!", "success");
-        }} 
-      />
-    );
+    return <StudentClaimView inviteCode={inviteData.id} studentData={inviteData.student} teacherName={inviteData.teacherName} theme={theme} toggleTheme={toggleTheme} isAlreadyClaimed={inviteData.isClaimed} onClaimSuccess={() => { setInviteData(null); clearInviteParams(); showToast("Account Linked Successfully!", "success"); }} />;
   }
 
-  // D. MAIN ROUTING
+  // E. MAIN ROUTING
   if (user && userRole) {
-    if (userRole === 'student') {
-      return <StudentApp userEmail={user.email} theme={theme} toggleTheme={toggleTheme} />;
-    }
+    if (userRole === 'student') return <StudentApp userEmail={user.email} theme={theme} toggleTheme={toggleTheme} />;
     return <TeacherDashboard user={user} theme={theme} toggleTheme={toggleTheme} showToast={showToast} />;
   }
 
-  // E. AUTH VIEW
+  // F. AUTH VIEW (Default)
   return <AuthView theme={theme} toggleTheme={toggleTheme} onLoginSuccess={() => showToast("Welcome back!")} />;
 }
