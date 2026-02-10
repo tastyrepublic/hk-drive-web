@@ -1,5 +1,8 @@
 import { Edit2, Phone, Car, MapPin, MessageCircle, Share2, CheckCircle2, Clock, Link2Off } from 'lucide-react';
 
+// --- CHANGE 1: Import Helpers to translate IDs to Text ---
+import { getVehicleLabel, getExamCenterLabel } from '../../constants/list';
+
 interface Props {
   stu: any;
   updateBalance: (id: string, newBalance: number) => void;
@@ -10,7 +13,7 @@ interface Props {
 export function StudentCard({ stu, updateBalance, openStudentModal, onSendInvite }: Props) {
   // 1. Determine Status
   const isLinked = !!stu.uid;
-  const isPending = !isLinked && !!stu.inviteToken; // <--- NEW: Detects if invite was sent
+  const isPending = !isLinked && !!stu.inviteToken; 
 
   const openWhatsApp = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -58,7 +61,9 @@ export function StudentCard({ stu, updateBalance, openStudentModal, onSendInvite
                 <span>{stu.phone}</span>
               </div>
               <span className="flex items-center gap-1.5">
-                <Car size={13} className="text-yellow-400" /> {stu.vehicle}
+                <Car size={13} className="text-yellow-400" /> 
+                {/* CHANGE 2: Use helper to show Label instead of ID */}
+                {getVehicleLabel(stu.vehicle)}
               </span>
             </div>
           </div>
@@ -84,7 +89,9 @@ export function StudentCard({ stu, updateBalance, openStudentModal, onSendInvite
       <div className="flex items-center justify-between pt-4 border-t border-gray-800/50">
         <div className="flex items-center gap-4">
             <span className="flex items-center gap-1.5 text-xs text-textGrey">
-                <MapPin size={14} className="text-orange" /> {stu.examRoute || 'No Route'}
+                <MapPin size={14} className="text-orange" /> 
+                {/* CHANGE 3: Use helper to show Label instead of ID */}
+                {getExamCenterLabel(stu.examRoute) || 'No Route'}
             </span>
             <button 
                 onClick={openWhatsApp}

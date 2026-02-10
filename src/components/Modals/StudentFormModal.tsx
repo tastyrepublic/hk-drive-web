@@ -2,13 +2,21 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   AlertTriangle, ChevronDown, Loader2, Trash2, 
   Share2, AlertCircle, Link2Off, Ban, Unlink,
-  Pencil, Send, Check, Smartphone, Copy, Lock 
+  Pencil, Send, Check, Smartphone, Copy, Lock,
+  User, Phone, Car, MapPin, 
+  Route as RouteIcon // Added Route Icon
 } from 'lucide-react';
 import { Modal } from './Modal'; 
 import { ConfirmModal } from './ConfirmModal';
 
-// --- 1. Import Config ---
-import { VEHICLE_TYPES, EXAM_CENTERS } from '../../constants/list'; 
+// --- Import Helpers & Lists ---
+import { 
+  VEHICLE_TYPES, 
+  EXAM_CENTERS, 
+  EXAM_ROUTES, // Needed for the list
+  getVehicleLabel, 
+  getExamCenterLabel 
+} from '../../constants/list'; 
 
 interface Props {
   isOpen: boolean;
@@ -24,10 +32,9 @@ interface Props {
   onSendInvite: (student: any) => Promise<void>;
   onCancelInvite: (id: string) => Promise<void>;
   onUnlink: (id: string) => Promise<void>;
-  // Removed vehicleTypes prop
   students: any[];
-  // Removed optional '?' - function is now required
   showToast: (msg: string, type: 'success' | 'error') => void;
+  teacherVehicles?: string[];
 }
 
 export function StudentFormModal({
@@ -35,7 +42,8 @@ export function StudentFormModal({
   studentError, saveStudentLoading, isStudentModified, onSave, onDelete, 
   onSendInvite, onCancelInvite, onUnlink,
   students = [],
-  showToast 
+  showToast,
+  teacherVehicles = [] 
 }: Props) {
 
   const [inviteStatus, setInviteStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
@@ -47,6 +55,27 @@ export function StudentFormModal({
   
   const [isLocked, setIsLocked] = useState(isEditing);
   const [initialSnapshot, setInitialSnapshot] = useState<any>(null);
+
+  // Dropdown States
+  const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
+  const [showRouteDropdown, setShowRouteDropdown] = useState(false);
+  const vehicleRef = useRef<HTMLDivElement>(null);
+  const routeRef = useRef<HTMLDivElement>(null);
+
+  // --- FILTER OBJECTS BY ID ---
+  const activeVehicleOptions = useMemo(() => {
+    if (teacherVehicles.length === 0) return VEHICLE_TYPES;
+    return VEHICLE_TYPES.filter(v => teacherVehicles.includes(v.id));
+  }, [teacherVehicles]);
+
+  // --- NEW: Calculate Routes for the View Mode ---
+  const relevantRoutes = useMemo(() => {
+    // If no center selected, return empty
+    if (!studentForm.examRoute || studentForm.examRoute === 'Not Assigned') return [];
+    
+    // Filter routes that belong to this center ID
+    return EXAM_ROUTES.filter(r => r.centerId === studentForm.examRoute);
+  }, [studentForm.examRoute]);
 
   useEffect(() => {
     if (isOpen) {
@@ -61,6 +90,20 @@ export function StudentFormModal({
     };
   }, [isOpen, isEditing]);
 
+  // Close Dropdowns on Click Outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (vehicleRef.current && !vehicleRef.current.contains(event.target as Node)) {
+        setShowVehicleDropdown(false);
+      }
+      if (routeRef.current && !routeRef.current.contains(event.target as Node)) {
+        setShowRouteDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const [confirmConfig, setConfirmConfig] = useState<{
       isOpen: boolean;
       title: string;
@@ -68,7 +111,7 @@ export function StudentFormModal({
       action: () => Promise<void> | void;
   } | null>(null);
 
-  // --- LIVE DATA SOURCE ---
+  // Live Data Logic
   const liveStudent = useMemo(() => {
     if (!isEditing || !studentForm.id) return studentForm;
     return students.find(s => s.id === studentForm.id) || studentForm;
@@ -76,7 +119,6 @@ export function StudentFormModal({
 
   const isAlreadyLinked = !!liveStudent.uid;
   const hasActiveInvite = !isAlreadyLinked && !!liveStudent.inviteToken;
-  
   const isPhoneLocked = isLocked || isAlreadyLinked || hasActiveInvite;
   const showPendingUI = hasActiveInvite || cancelLoading || inviteStatus !== 'idle';
 
@@ -92,7 +134,6 @@ export function StudentFormModal({
     });
   }, [studentForm.phone, students, isEditing, saveStudentLoading, studentForm.id]);
 
-  // --- HANDLERS ---
   const handleEnterEditMode = () => {
     setInitialSnapshot({ ...studentForm });
     setIsLocked(false);
@@ -108,26 +149,18 @@ export function StudentFormModal({
   const handleInviteClick = async () => {
      if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
      setInviteStatus('sending');
-
      const minWait = new Promise(resolve => setTimeout(resolve, 800));
-
      try {
         const payload = {
             ...studentForm, 
             inviteToken: liveStudent?.inviteToken || null, 
             inviteExpiresAt: liveStudent?.inviteExpiresAt || null 
         };
-
         await Promise.all([onSendInvite(payload), minWait]);
-        
         setInviteStatus('sent');
-        
-        // --- 2. NO TOAST HERE (As requested) ---
-        
         resetTimerRef.current = setTimeout(() => {
             setInviteStatus('idle');
         }, 2500);
-
      } catch (error) { 
          console.error(error); 
          showToast('Failed to send invite', 'error');
@@ -138,12 +171,9 @@ export function StudentFormModal({
   const handleCopyLink = () => {
     const tokenToUse = liveStudent.inviteToken; 
     if (!tokenToUse) return;
-    
     const inviteLink = `${window.location.origin}?invite=${liveStudent.id}&token=${tokenToUse}`;
-    
     navigator.clipboard.writeText(inviteLink).then(() => {
         setCopyStatus('copied');
-        // --- 3. Normal Toast Usage ---
         showToast('Link copied to clipboard!', 'success');
         setTimeout(() => setCopyStatus('idle'), 2000);
     });
@@ -270,13 +300,16 @@ export function StudentFormModal({
             <div className="space-y-4">
                 <div className="space-y-1">
                     <label className="text-[10px] text-textGrey uppercase font-black px-1">Full Name</label>
-                    <input 
-                        type="text" 
-                        disabled={isLocked}
-                        value={studentForm.name} 
-                        onChange={e => setStudentForm({...studentForm, name: e.target.value})} 
-                        className={`${inputBase} ${isLocked ? inputView : inputEdit}`} 
-                    />
+                    <div className="relative">
+                        <User className={`absolute left-3 top-3 ${isLocked ? 'hidden' : 'text-textGrey'}`} size={18} />
+                        <input 
+                            type="text" 
+                            disabled={isLocked}
+                            value={studentForm.name} 
+                            onChange={e => setStudentForm({...studentForm, name: e.target.value})} 
+                            className={`${inputBase} ${isLocked ? inputView : inputEdit} ${!isLocked ? 'pl-10' : ''}`} 
+                        />
+                    </div>
                 </div>
 
                 <div className="space-y-1">
@@ -290,6 +323,7 @@ export function StudentFormModal({
                     </div>
                     
                     <div className="relative">
+                        <Phone className={`absolute left-3 top-3 ${isLocked ? 'hidden' : 'text-textGrey'}`} size={18} />
                         <input 
                             type="text" 
                             disabled={isPhoneLocked}
@@ -300,6 +334,7 @@ export function StudentFormModal({
                                 setStudentForm({...studentForm, phone: onlyNums});
                             }} 
                             className={`${inputBase} ${isLocked ? inputView : inputEdit} 
+                                ${!isLocked ? 'pl-10' : ''}
                                 ${duplicateStudent && !isLocked ? 'border-statusRed' : ''} 
                                 ${(!isLocked && isPhoneLocked) ? 'opacity-50 cursor-not-allowed bg-gray-900/50 text-gray-400' : ''}`} 
                         />
@@ -316,40 +351,143 @@ export function StudentFormModal({
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
+                    
+                    {/* CUSTOM VEHICLE DROPDOWN */}
+                    <div className="space-y-1" ref={vehicleRef}>
                         <label className="text-[10px] text-textGrey uppercase font-black px-1">Vehicle</label>
                         <div className="relative">
-                            <select 
-                                value={studentForm.vehicle} 
-                                disabled={isLocked}
-                                onChange={e => setStudentForm({...studentForm, vehicle: e.target.value})} 
-                                className={`${inputBase} ${isLocked ? inputView : inputEdit} appearance-none`}
-                            >
-                                {/* DYNAMIC LIST */}
-                                {VEHICLE_TYPES.map(v => <option key={v} value={v}>{v}</option>)}
-                            </select>
-                            {!isLocked && <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-textGrey pointer-events-none" size={14} />}
+                            {isLocked ? (
+                                // Use Helper for Display
+                                <div className={`${inputBase} ${inputView}`}>{getVehicleLabel(studentForm.vehicle)}</div>
+                            ) : (
+                                <>
+                                    <div 
+                                        onClick={() => setShowVehicleDropdown(!showVehicleDropdown)}
+                                        className={`w-full pl-10 pr-10 p-3 bg-midnight border rounded-lg text-white cursor-pointer flex items-center transition-colors ${showVehicleDropdown ? 'border-orange' : 'border-gray-800 hover:border-gray-500'}`}
+                                    >
+                                        <div className="flex items-center gap-2 overflow-hidden">
+                                            <Car className="absolute left-3 top-3 text-textGrey" size={18} />
+                                            <span className="truncate">{getVehicleLabel(studentForm.vehicle) || "Select Vehicle..."}</span>
+                                        </div>
+                                        <ChevronDown size={16} className={`absolute right-3 top-1/2 -translate-y-1/2 text-textGrey transition-transform ${showVehicleDropdown ? 'rotate-180' : ''}`} />
+                                    </div>
+
+                                    {showVehicleDropdown && (
+                                        <div className="absolute bottom-full left-0 right-0 mb-1 bg-slate border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden">
+                                            <div className="max-h-56 overflow-y-auto custom-scrollbar">
+                                                {/* Map over filtered Objects */}
+                                                {activeVehicleOptions.map((v) => (
+                                                    <div 
+                                                        key={v.id}
+                                                        onClick={() => {
+                                                            setStudentForm({...studentForm, vehicle: v.id});
+                                                            setShowVehicleDropdown(false);
+                                                        }}
+                                                        className={`p-3 text-sm font-bold cursor-pointer transition-colors border-b border-gray-800 last:border-0 flex items-center justify-between ${
+                                                            studentForm.vehicle === v.id
+                                                            ? 'bg-orange/10 text-orange' 
+                                                            : 'text-white hover:bg-midnight'
+                                                        }`}
+                                                    >
+                                                        <span>{v.label}</span>
+                                                        {studentForm.vehicle === v.id && <Check size={16} />}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            )}
                         </div>
                     </div>
 
-                    <div className="space-y-1">
+                    {/* CUSTOM EXAM CENTER DROPDOWN */}
+                    <div className="space-y-1" ref={routeRef}>
                         <label className="text-[10px] text-textGrey uppercase font-black px-1">Exam Center</label>
                         <div className="relative">
-                            <select 
-                                value={studentForm.examRoute} 
-                                disabled={isLocked}
-                                onChange={e => setStudentForm({...studentForm, examRoute: e.target.value})} 
-                                className={`${inputBase} ${isLocked ? inputView : inputEdit} appearance-none`}
-                            >
-                                <option>Not Assigned</option>
-                                {/* DYNAMIC LIST */}
-                                {EXAM_CENTERS.map(c => <option key={c} value={c}>{c}</option>)}
-                            </select>
-                            {!isLocked && <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-textGrey pointer-events-none" size={14} />}
+                            {isLocked ? (
+                                // Use Helper for Display
+                                <div className={`${inputBase} ${inputView}`}>{getExamCenterLabel(studentForm.examRoute) || 'Not Assigned'}</div>
+                            ) : (
+                                <>
+                                    <div 
+                                        onClick={() => setShowRouteDropdown(!showRouteDropdown)}
+                                        className={`w-full pl-10 pr-10 p-3 bg-midnight border rounded-lg text-white cursor-pointer flex items-center transition-colors ${showRouteDropdown ? 'border-orange' : 'border-gray-800 hover:border-gray-500'}`}
+                                    >
+                                        <div className="flex items-center gap-2 overflow-hidden">
+                                            <MapPin className="absolute left-3 top-3 text-textGrey" size={18} />
+                                            <span className="truncate">{getExamCenterLabel(studentForm.examRoute) || "Not Assigned"}</span>
+                                        </div>
+                                        <ChevronDown size={16} className={`absolute right-3 top-1/2 -translate-y-1/2 text-textGrey transition-transform ${showRouteDropdown ? 'rotate-180' : ''}`} />
+                                    </div>
+
+                                    {showRouteDropdown && (
+                                        <div className="absolute bottom-full left-0 right-0 mb-1 bg-slate border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden">
+                                            <div className="max-h-56 overflow-y-auto custom-scrollbar">
+                                                <div 
+                                                    onClick={() => {
+                                                        setStudentForm({...studentForm, examRoute: 'Not Assigned'});
+                                                        setShowRouteDropdown(false);
+                                                    }}
+                                                    className={`p-3 text-sm font-bold cursor-pointer transition-colors border-b border-gray-800 flex items-center justify-between ${
+                                                        !studentForm.examRoute || studentForm.examRoute === 'Not Assigned'
+                                                        ? 'bg-orange/10 text-orange' 
+                                                        : 'text-textGrey hover:bg-midnight hover:text-white'
+                                                    }`}
+                                                >
+                                                    <span>Not Assigned</span>
+                                                    {(!studentForm.examRoute || studentForm.examRoute === 'Not Assigned') && <Check size={16} />}
+                                                </div>
+
+                                                {/* Map Objects */}
+                                                {EXAM_CENTERS.map((c) => (
+                                                    <div 
+                                                        key={c.id}
+                                                        onClick={() => {
+                                                            setStudentForm({...studentForm, examRoute: c.id});
+                                                            setShowRouteDropdown(false);
+                                                        }}
+                                                        className={`p-3 text-sm font-bold cursor-pointer transition-colors border-b border-gray-800 last:border-0 flex items-center justify-between ${
+                                                            studentForm.examRoute === c.id 
+                                                            ? 'bg-orange/10 text-orange' 
+                                                            : 'text-white hover:bg-midnight'
+                                                        }`}
+                                                    >
+                                                        <span>{c.label}</span>
+                                                        {studentForm.examRoute === c.id && <Check size={16} />}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>
             </div>
+
+            {/* --- NEW SECTION: EXAM ROUTES DISPLAY (Only in Locked Mode) --- */}
+            {isLocked && studentForm.examRoute && studentForm.examRoute !== 'Not Assigned' && relevantRoutes.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-gray-800/50 animate-in fade-in slide-in-from-top-1">
+                    <label className="text-[10px] text-textGrey uppercase font-black px-1 mb-2 flex items-center gap-1">
+                        <RouteIcon size={12} /> Available Routes
+                    </label>
+                    
+                    <div className="bg-midnight/50 rounded-lg p-3 border border-gray-800">
+                        <div className="space-y-2">
+                            {relevantRoutes.map((route, index) => (
+                                <div key={route.id} className="flex items-center gap-3 text-sm text-gray-300">
+                                    <div className="w-5 h-5 rounded-full bg-gray-800 flex items-center justify-center text-[10px] font-bold text-textGrey border border-gray-700">
+                                        {index + 1}
+                                    </div>
+                                    <span className="font-medium">{route.label}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* --- CONNECTION SECTION --- */}
             {isEditing && studentForm.id && isLocked && (

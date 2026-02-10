@@ -1,7 +1,11 @@
 import { 
-  Calendar, CreditCard, User, MapPin, Clock, Phone, Car, History, Sparkles, Plus 
+  Calendar, CreditCard, User, MapPin, Clock, Phone, Car, History, Sparkles, Plus, 
+  Route as RouteIcon 
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+
+// --- Import Helpers & Data ---
+import { getVehicleLabel, getExamCenterLabel, EXAM_ROUTES } from '../../constants/list';
 
 interface Props {
   activeProfile: any;
@@ -16,44 +20,78 @@ export function DashboardView({ activeProfile, instructor, nextLesson, lessons, 
   const isDark = theme === 'dark';
   const cardColor = isDark ? 'bg-slate border-gray-800' : 'bg-white border-gray-200';
 
+  // --- CALCULATE ROUTES ---
+  const assignedCenterId = activeProfile?.examRoute;
+  const assignedRoutes = (assignedCenterId && assignedCenterId !== 'Not Assigned')
+    ? EXAM_ROUTES.filter(r => r.centerId === assignedCenterId)
+    : [];
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
       
       {/* LEFT COLUMN: PRIMARY INFORMATION */}
       <div className="md:col-span-7 space-y-6">
-        {/* 1. BALANCE CARD */}
-<div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 text-white shadow-lg p-6">
-  {/* Background Icon Decoration */}
-  <div className="absolute top-0 right-0 p-4 opacity-20">
-    <CreditCard size={100} className="!text-white" />
-  </div>
+        
+        {/* 1. BALANCE & INFO CARD (Original Design + Routes) */}
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 text-white shadow-lg p-6">
+          
+          {/* Background Icon Decoration */}
+          <div className="absolute top-0 right-0 p-4 opacity-20">
+            <CreditCard size={100} className="!text-white" />
+          </div>
 
-  <div className="relative z-10">
-    <div className="text-sm font-medium opacity-90 mb-1 uppercase tracking-wider !text-white">
-      Lesson Balance
-    </div>
-    <div className="text-6xl font-black tracking-tighter !text-white">
-      {activeProfile?.balance ?? 0}
-    </div>
+          <div className="relative z-10">
+            {/* Balance Section */}
+            <div className="text-sm font-medium opacity-90 mb-1 uppercase tracking-wider !text-white">
+              Lesson Balance
+            </div>
+            <div className="text-6xl font-black tracking-tighter !text-white">
+              {activeProfile?.balance ?? 0}
+            </div>
 
-    {/* PROFILE TAGS CONTAINER */}
-    <div className="mt-4 flex flex-wrap items-center gap-2">
-      {/* VEHICLE TAG */}
-      <div className="flex items-center gap-2 text-xs font-bold bg-black/20 w-fit px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10 uppercase">
-        <Car size={14} className="!text-white" /> 
-        <span className="!text-white">{activeProfile?.vehicle || 'General'}</span>
-      </div>
+            {/* TAGS ROW (Vehicle & Center) */}
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              {/* VEHICLE TAG */}
+              <div className="flex items-center gap-2 text-xs font-bold bg-black/20 w-fit px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10 uppercase">
+                <Car size={14} className="!text-white" /> 
+                <span className="!text-white">
+                  {getVehicleLabel(activeProfile?.vehicle) || 'General'}
+                </span>
+              </div>
 
-      {/* EXAM ROUTE TAG (Moved here) */}
-      {activeProfile?.examRoute && activeProfile.examRoute !== 'Not Assigned' && (
-        <div className="flex items-center gap-2 text-xs font-bold bg-white/20 w-fit px-3 py-1.5 rounded-full backdrop-blur-md border border-white/20 uppercase">
-          <MapPin size={14} className="!text-white" /> 
-          <span className="!text-white">{activeProfile.examRoute}</span>
+              {/* EXAM CENTER TAG */}
+              {assignedCenterId && assignedCenterId !== 'Not Assigned' && (
+                <div className="flex items-center gap-2 text-xs font-bold bg-white/20 w-fit px-3 py-1.5 rounded-full backdrop-blur-md border border-white/20 uppercase">
+                  <MapPin size={14} className="!text-white" /> 
+                  <span className="!text-white">
+                    {getExamCenterLabel(assignedCenterId)}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* --- NEW: ROUTES SECTION (Integrated) --- */}
+            {assignedRoutes.length > 0 && (
+                <div className="mt-5 pt-4 border-t border-white/20 animate-in fade-in slide-in-from-bottom-2">
+                    <div className="text-[10px] font-bold uppercase tracking-widest opacity-70 mb-2 flex items-center gap-1 !text-white">
+                        <RouteIcon size={12} /> Routes to Master
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        {assignedRoutes.map((route, i) => (
+                            <div 
+                                key={route.id} 
+                                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/10 border border-white/10 text-xs font-medium backdrop-blur-sm"
+                            >
+                                <span className="opacity-50 text-[10px] font-bold">#{i + 1}</span>
+                                <span>{route.label}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+          </div>
         </div>
-      )}
-    </div>
-  </div>
-</div>
 
         {/* 2. NEXT LESSON */}
         <div className={`p-5 rounded-2xl border shadow-sm ${cardColor}`}>
@@ -157,7 +195,7 @@ export function DashboardView({ activeProfile, instructor, nextLesson, lessons, 
       {/* RIGHT COLUMN: ACTIONS & LEARNING PROGRESS */}
       <div className="md:col-span-5 space-y-6">
         
-        {/* NAVIGATION CARDS (Stacked vertically in sidebar) */}
+        {/* NAVIGATION CARDS */}
         <div className="flex flex-col gap-4">
           <button 
               onClick={() => setCurrentView('schedule')} 

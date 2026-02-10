@@ -1,8 +1,13 @@
 import { AlertTriangle, Trash2, Loader2, Calendar, Clock, MapPin, Search, Car, Coffee } from 'lucide-react';
 import { Modal } from './Modal';
 import { useState, useEffect } from 'react';
-// Import centralized locations
-import { LESSON_LOCATIONS } from '../../constants/list';
+
+// --- Import Constants & Helpers ---
+import { 
+  LESSON_LOCATIONS, 
+  BLOCK_REASONS, 
+  VEHICLE_TYPES 
+} from '../../constants/list';
 
 interface Props {
   editingSlot: any; 
@@ -28,7 +33,7 @@ export function EditLessonModal({
   onSave, onDelete,
   lessonDuration = 45,
   students = [],
-  vehicleTypes = ['Private Car (Auto) 1A'] 
+  vehicleTypes = ['1a'] // Default to ID '1a'
 }: Props) {
 
   const isOpen = !!editingSlot; 
@@ -39,16 +44,12 @@ export function EditLessonModal({
   
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   
-  // UPDATED: Use the imported list
-  const predefinedLocations = LESSON_LOCATIONS;
-  const blockReasons = ['Lunch', 'Personal', 'Maintenance', 'Holiday'];
   const blockDurations = [15, 30, 45, 60, 90, 120];
 
   const singleTime = lessonDuration;
   const doubleTime = lessonDuration * 2;
   const isBlockMode = editForm.status === 'Blocked';
 
-  // --- CALCULATE DURATION & END TIME ---
   const currentDuration = isBlockMode 
     ? (editForm.customDuration || singleTime) 
     : (editForm.isDouble ? doubleTime : singleTime);
@@ -62,7 +63,6 @@ export function EditLessonModal({
   };
   const currentEndTime = calculateEndTime(editForm.time, currentDuration);
 
-  // --- SYNC STUDENT NAME ON OPEN ---
   useEffect(() => {
     if (isOpen && editForm.studentId) {
       const match = students.find(s => s.id === editForm.studentId);
@@ -83,19 +83,15 @@ export function EditLessonModal({
       handleChange('customDuration', 540); 
   };
 
-  // --- UPDATED: FILTER STUDENTS BY VEHICLE ---
+  // --- FILTER: Compare IDs (editForm.type is ID, s.vehicle is ID) ---
   const filteredStudents = students.filter(s => {
     const matchesName = s.name.toLowerCase().includes(studentQuery.toLowerCase());
-    
-    // STRICT FILTER: Only show students that match the selected vehicle type
-    // (Only applies if we are in Lesson mode and a type is selected)
     const matchesVehicle = isBlockMode || !editForm.type || s.vehicle === editForm.type;
-    
     return matchesName && matchesVehicle;
   });
 
-  const filteredLocations = predefinedLocations.filter(loc => 
-    loc.toLowerCase().includes((editForm.location || '').toLowerCase())
+  const filteredLocations = LESSON_LOCATIONS.filter(loc => 
+    loc.label.toLowerCase().includes((editForm.location || '').toLowerCase())
   );
 
   return (
@@ -104,7 +100,6 @@ export function EditLessonModal({
       onClose={() => setEditingSlot(null)}
       title={isEditing ? (isBlockMode ? "Edit Block" : "Edit Lesson") : "Add New Slot"} 
       maxWidth="max-w-md"
-      
       footer={
         <div className="flex justify-between items-center gap-4">
            {isEditing ? (
@@ -142,7 +137,6 @@ export function EditLessonModal({
           </div>
         )}
 
-        {/* --- TYPE TOGGLE --- */}
         <div className="flex p-1 bg-midnight border border-gray-800 rounded-lg">
            <button 
              onClick={() => {
@@ -150,7 +144,7 @@ export function EditLessonModal({
                 setEditForm({ 
                     ...editForm, 
                     status: 'Booked', 
-                    type: originalWasLesson ? (editingSlot?.type || 'Private Car') : 'Private Car',
+                    type: originalWasLesson ? (editingSlot?.type || '1a') : '1a',
                     studentId: editingSlot?.studentId || '',
                     customDuration: editingSlot?.customDuration || undefined
                 });
@@ -178,20 +172,19 @@ export function EditLessonModal({
            </button>
         </div>
 
-        {/* --- NEW: VEHICLE SELECTOR (Only in Lesson Mode) --- */}
         {!isBlockMode && (
             <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
                <label className="text-[10px] text-textGrey uppercase font-black px-1">Vehicle Category</label>
                <div className="flex flex-wrap gap-2">
-                  {vehicleTypes.map(v => {
-                      // Simplify label for display (e.g., "Private Car (Auto) 1A" -> "Car (Auto) 1A")
-                      const label = v.replace('Private Car', 'Car').replace('Light Goods', 'Van');
+                  {/* Filter and Map Objects */}
+                  {VEHICLE_TYPES.filter(vObj => vehicleTypes.includes(vObj.id)).map(v => {
+                      const label = v.label.replace('Private Car', 'Car').replace('Light Goods', 'Van');
                       return (
                         <button
-                          key={v}
-                          onClick={() => handleChange('type', v)}
+                          key={v.id}
+                          onClick={() => handleChange('type', v.id)}
                           className={`px-3 py-1.5 rounded-md text-xs font-bold border transition-all ${
-                             editForm.type === v
+                             editForm.type === v.id
                                ? 'bg-orange text-white border-orange'
                                : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'
                           }`}
@@ -204,7 +197,6 @@ export function EditLessonModal({
             </div>
          )}
 
-        {/* --- DATE & TIME --- */}
         <div className="grid grid-cols-2 gap-4">
              <div className="space-y-1">
               <label className="text-[10px] text-textGrey uppercase font-black px-1">Date</label>
@@ -235,8 +227,6 @@ export function EditLessonModal({
         
         {isBlockMode ? (
             <div className="space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
-                
-                {/* --- BLOCK DURATION SELECTOR --- */}
                 <div className="space-y-2">
                     <label className="text-[10px] text-textGrey uppercase font-black px-1 flex justify-between">
                         <span>Duration</span>
@@ -269,23 +259,22 @@ export function EditLessonModal({
                     </div>
                 </div>
 
-                {/* --- REASON INPUT --- */}
                 <div className="space-y-2">
                     <label className="text-[10px] text-textGrey uppercase font-black px-1">Reason</label>
                     
-                    {/* Reason Chips */}
                     <div className="flex flex-wrap gap-2 mb-2">
-                        {blockReasons.map(reason => (
+                        {/* Map Block Reasons by ID */}
+                        {BLOCK_REASONS.map(reason => (
                             <button
-                                key={reason}
-                                onClick={() => handleChange('type', reason)}
+                                key={reason.id}
+                                onClick={() => handleChange('type', reason.id)}
                                 className={`px-3 py-1.5 rounded-md text-xs font-bold border transition-all ${
-                                    editForm.type === reason
+                                    editForm.type === reason.id
                                     ? 'bg-white text-black border-white'
                                     : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'
                                 }`}
                             >
-                                {reason}
+                                {reason.label}
                             </button>
                         ))}
                     </div>
@@ -301,7 +290,6 @@ export function EditLessonModal({
             </div>
         ) : (
             <>
-                {/* --- LESSON MODE CONTENT --- */}
                 <div className="flex items-center justify-between bg-midnight border border-gray-800 p-4 rounded-xl cursor-pointer" onClick={() => handleChange('isDouble', !editForm.isDouble)}>
                     <div className="flex flex-col">
                         <span className="text-sm font-bold text-white">
@@ -327,7 +315,6 @@ export function EditLessonModal({
                     </button>
                 </div>
 
-                {/* Student Search */}
                 <div className="space-y-1 relative z-50 animate-in fade-in slide-in-from-top-1 duration-200"> 
                   <label className="text-[10px] text-textGrey uppercase font-black px-1">Student</label>
                   <div className="relative">
@@ -346,38 +333,39 @@ export function EditLessonModal({
                         className="w-full pl-10 p-3 bg-midnight border border-gray-700 rounded-lg text-white focus:border-orange outline-none transition-colors"
                       />
                       {showStudentDropdown && (
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-slate border border-gray-700 rounded-lg shadow-xl max-h-48 overflow-y-auto custom-scrollbar overflow-hidden">
-                          {filteredStudents.length > 0 ? (
-                            filteredStudents.map(student => (
-                              <div 
-                                key={student.id}
-                                className="p-3 hover:bg-midnight cursor-pointer transition-colors border-b border-gray-800 last:border-0 flex items-center justify-between"
-                                onMouseDown={(e) => e.preventDefault()} 
-                                onClick={() => {
-                                  handleChange('studentId', student.id);
-                                  setStudentQuery(student.name);
-                                  setShowStudentDropdown(false);
-                                }}
-                              >
-                                <span className="font-bold text-white text-sm">{student.name}</span>
-                                {/* UPDATED: Show vehicle badge to confirm match */}
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-textGrey">
-                                    {student.vehicle?.split(')')[1] || student.vehicle} 
-                                </span>
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-slate border border-gray-700 rounded-lg shadow-xl overflow-hidden">
+                          <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                            {filteredStudents.length > 0 ? (
+                              filteredStudents.map(student => (
+                                <div 
+                                  key={student.id}
+                                  className="p-3 hover:bg-midnight cursor-pointer transition-colors border-b border-gray-800 last:border-0 flex items-center justify-between"
+                                  onMouseDown={(e) => e.preventDefault()} 
+                                  onClick={() => {
+                                    handleChange('studentId', student.id);
+                                    setStudentQuery(student.name);
+                                    setShowStudentDropdown(false);
+                                  }}
+                                >
+                                  <span className="font-bold text-white text-sm">{student.name}</span>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-textGrey">
+                                      {/* Just ID is shown here, might want to find label if critical, but simplified for now */}
+                                      {student.vehicle} 
+                                  </span>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="p-4 text-textGrey text-xs text-center flex flex-col gap-1">
+                                 <span>No students found.</span>
+                                 <span className="opacity-50">Filter is active: {editForm.type}</span>
                               </div>
-                            ))
-                          ) : (
-                            <div className="p-4 text-textGrey text-xs text-center flex flex-col gap-1">
-                               <span>No students found.</span>
-                               <span className="opacity-50">Filter is active: {editForm.type}</span>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
                       )}
                   </div>
                 </div>
 
-                {/* Location Search */}
                 <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200 relative z-40">
                   <div className="space-y-1">
                     <label className="text-[10px] text-textGrey uppercase font-black px-1">Location</label>
@@ -396,38 +384,40 @@ export function EditLessonModal({
                         className="w-full pl-10 p-3 bg-midnight border border-gray-700 rounded-lg text-white focus:border-orange outline-none transition-colors"
                       />
                       {showLocationDropdown && filteredLocations.length > 0 && (
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-slate border border-gray-700 rounded-lg shadow-xl max-h-48 overflow-y-auto custom-scrollbar overflow-hidden">
-                            {filteredLocations.map(loc => (
-                                <div 
-                                    key={loc}
-                                    className="p-3 hover:bg-midnight cursor-pointer transition-colors border-b border-gray-800 last:border-0"
-                                    onMouseDown={(e) => e.preventDefault()}
-                                    onClick={() => {
-                                        handleChange('location', loc);
-                                        setShowLocationDropdown(false);
-                                    }}
-                                >
-                                    <span className="font-bold text-white text-sm">{loc}</span>
-                                </div>
-                            ))}
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-slate border border-gray-700 rounded-lg shadow-xl overflow-hidden">
+                            <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                                {filteredLocations.map(loc => (
+                                    <div 
+                                        key={loc.id}
+                                        className="p-3 hover:bg-midnight cursor-pointer transition-colors border-b border-gray-800 last:border-0"
+                                        onMouseDown={(e) => e.preventDefault()}
+                                        onClick={() => {
+                                            handleChange('location', loc.label); // Save LABEL for locations
+                                            setShowLocationDropdown(false);
+                                        }}
+                                    >
+                                        <span className="font-bold text-white text-sm">{loc.label}</span>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                       )}
                     </div>
                   </div>
 
                   <div className="flex flex-wrap gap-2">
-                    {predefinedLocations.map(loc => (
+                    {LESSON_LOCATIONS.map(loc => (
                       <button 
-                        key={loc}
+                        key={loc.id}
                         type="button" 
-                        onClick={() => handleChange('location', loc)}
+                        onClick={() => handleChange('location', loc.label)} // Save LABEL
                         className={`px-3 py-1.5 rounded-md text-xs font-bold border transition-all ${
-                          editForm.location === loc 
+                          editForm.location === loc.label 
                             ? 'bg-orange text-white border-orange' 
                             : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'
                         }`}
                       >
-                        {loc}
+                        {loc.label}
                       </button>
                     ))}
                   </div>

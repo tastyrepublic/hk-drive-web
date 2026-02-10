@@ -243,10 +243,21 @@ export function AuthForm({ role, onLoginSuccess, onBack, theme }: Props) {
                                             <div className="grid grid-cols-1 gap-2">
                                                 {/* --- CHANGE 2: Use VEHICLE_TYPES here --- */}
                                                 {VEHICLE_TYPES.map(v => (
-                                                    <button key={v} type="button" onClick={() => setSelectedVehicles(prev => prev.includes(v) ? prev.filter(i => i !== v) : [...prev, v])} className={`p-3 rounded-lg border flex items-center justify-between transition-all text-xs font-bold ${selectedVehicles.includes(v) ? 'bg-primary text-white border-primary' : `${isDark ? 'bg-transparent text-textGrey border-gray-700' : 'bg-white text-gray-500 border-gray-200'}`}`}>
-                                                        <div className="flex items-center gap-3"><Car size={16} /><span>{v}</span></div>{selectedVehicles.includes(v) && <Check size={16} />}
-                                                    </button>
-                                                ))}
+    <button 
+        key={v.id} 
+        type="button" 
+        onClick={() => setSelectedVehicles(prev => 
+            prev.includes(v.id) ? prev.filter(i => i !== v.id) : [...prev, v.id]
+        )} 
+        className={`... ${selectedVehicles.includes(v.id) ? '...' : '...'}`}
+    >
+        <div className="flex items-center gap-3">
+            <Car size={16} />
+            <span>{v.label}</span>
+        </div>
+        {selectedVehicles.includes(v.id) && <Check size={16} />}
+    </button>
+))}
                                             </div>
                                         </div>
                                     </motion.div>

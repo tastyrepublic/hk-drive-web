@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { SettingsSidebar } from './SettingsSidebar';
 import { User as UserIcon, Clock, Landmark, ShieldCheck, Save, Loader2, Car, Check } from 'lucide-react';
-// Import the centralized list
-import { VEHICLE_TYPES } from '../../constants/list'; 
+import { VEHICLE_TYPES, LESSON_DURATIONS } from '../../constants/list'; 
 
 interface Props {
   profile: any;
@@ -30,13 +29,12 @@ export function SettingsView({ profile, setProfile, onSave, isLoading }: Props) 
   const hasVehicleTypes = draftProfile.vehicleTypes && draftProfile.vehicleTypes.length > 0;
 
   // --- TOGGLE VEHICLE HELPER ---
-  // (Your original logic preserved: allows deselecting all, relies on validation to block save)
-  const toggleVehicle = (vehicle: string) => {
+  const toggleVehicle = (vehicleId: string) => {
     const currentList = draftProfile.vehicleTypes || []; 
-    if (currentList.includes(vehicle)) {
-      setDraftProfile({ ...draftProfile, vehicleTypes: currentList.filter((v: string) => v !== vehicle) });
+    if (currentList.includes(vehicleId)) {
+      setDraftProfile({ ...draftProfile, vehicleTypes: currentList.filter((id: string) => id !== vehicleId) });
     } else {
-      setDraftProfile({ ...draftProfile, vehicleTypes: [...currentList, vehicle] });
+      setDraftProfile({ ...draftProfile, vehicleTypes: [...currentList, vehicleId] });
     }
   };
 
@@ -91,13 +89,13 @@ export function SettingsView({ profile, setProfile, onSave, isLoading }: Props) 
                     <Car className={!hasVehicleTypes ? 'text-statusRed' : 'text-orange'} /> Teaching Categories
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* Updated to use VEHICLE_TYPES from list.ts */}
+                {/* UPDATED: Map over the ID-based list */}
                 {VEHICLE_TYPES.map(v => {
-                    const isSelected = (draftProfile.vehicleTypes || []).includes(v);
+                    const isSelected = (draftProfile.vehicleTypes || []).includes(v.id);
                     return (
                     <button
-                        key={v}
-                        onClick={() => toggleVehicle(v)}
+                        key={v.id}
+                        onClick={() => toggleVehicle(v.id)}
                         className={`p-3 rounded-xl border flex items-center justify-between transition-all ${
                         isSelected 
                             ? 'bg-orange/10 border-orange text-white' 
@@ -106,14 +104,14 @@ export function SettingsView({ profile, setProfile, onSave, isLoading }: Props) 
                     >
                         <div className="flex items-center gap-3">
                         <Car size={18} className={isSelected ? 'text-orange' : 'opacity-50'} />
-                        <span className="font-bold text-sm">{v}</span>
+                        {/* Display Label, Save ID */}
+                        <span className="font-bold text-sm">{v.label}</span>
                         </div>
                         {isSelected && <Check size={18} className="text-orange" />}
                     </button>
                     );
                 })}
                 </div>
-                {/* Existing Warning Message Preserved */}
                 {!hasVehicleTypes && (
                     <p className="text-xs text-statusRed font-bold px-1 mt-3 flex items-center gap-1 animate-pulse">
                        * You must select at least one vehicle category.
@@ -127,7 +125,7 @@ export function SettingsView({ profile, setProfile, onSave, isLoading }: Props) 
                 <Clock className="text-orange" /> Standard Duration
               </h2>
               <div className="grid grid-cols-2 gap-4 mt-4">
-                {[40, 45].map(dur => (
+                {LESSON_DURATIONS.map(dur => (
                   <button 
                     key={dur} 
                     onClick={() => setDraftProfile({ ...draftProfile, lessonDuration: dur })} 

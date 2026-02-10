@@ -1,75 +1,161 @@
-// src/constants.ts
+// src/constants/list.ts
 
-// --- VEHICLE TYPES ---
-// Codes: 1 (Private Car), 2 (LGV), 3 (Motorcycle), A (Automatic)
+// --- HELPER: Get Label by ID (Safe for Legacy Data) ---
+// If the ID isn't found, it returns the value itself (so old string data still shows up).
+const getLabel = (list: { id: string, label: string }[], value: string) => {
+  if (!value) return '';
+  const item = list.find(i => i.id === value);
+  return item ? item.label : value;
+};
+
+// =========================================
+// 1. VEHICLE TYPES
+// =========================================
 export const VEHICLE_TYPES = [
-  'Private Car (Auto) 1A',
-  'Private Car (Manual) 1',
-  'Light Goods (Van) 2A',
-  'Light Goods (Van) 2',
-  'Motorcycle (Auto) 3A',
-  'Motorcycle (Manual) 3',
-  'Taxi 6',
+  { id: '1a', label: 'Private Car (Auto) 1A' },
+  { id: '1',  label: 'Private Car (Manual) 1' },
+  { id: '2a', label: 'Light Goods (Van) 2A' },
+  { id: '2',  label: 'Light Goods (Van) 2' },
+  { id: '3a', label: 'Motorcycle (Auto) 3A' },
+  { id: '3',  label: 'Motorcycle (Manual) 3' },
+  { id: '6',  label: 'Taxi 6' },
 ];
 
-// --- EXAM CENTERS (Physical Locations) ---
-// The official locations where the test starts
+export const DEFAULT_VEHICLE_ID = '1a';
+
+// Helper to display text in UI
+export const getVehicleLabel = (id: string) => getLabel(VEHICLE_TYPES, id);
+
+
+// =========================================
+// 2. EXAM CENTERS
+// =========================================
 export const EXAM_CENTERS = [
   // Kowloon
-  'Tin Kwong Road (Kowloon)',
-  'Pui Ching Road (Kowloon)',
-  'Chung Yee Street (Kowloon)',
-  'Yau Tong (Kowloon)',
-  'Chak On Road (Kowloon)',
-  'Pak Tin (Kowloon)',
+  { id: 'tin_kwong',    label: 'Tin Kwong Road (Kowloon)' },
+  { id: 'pui_ching',    label: 'Pui Ching Road (Kowloon)' },
+  { id: 'chung_yee',    label: 'Chung Yee Street (Kowloon)' },
+  { id: 'yau_tong',     label: 'Yau Tong (Kowloon)' },
+  { id: 'chak_on',      label: 'Chak On Road (Kowloon)' },
+  { id: 'pak_tin',      label: 'Pak Tin (Kowloon)' },
   
   // HK Island
-  'Happy Valley (HK Island)',
-  'So Kon Po (HK Island)',
-  'Ap Lei Chau (HK Island - School)', // Designated School
+  { id: 'happy_valley', label: 'Happy Valley (HK Island)' },
+  { id: 'so_kon_po',    label: 'So Kon Po (HK Island)' },
+  { id: 'ap_lei_chau',  label: 'Ap Lei Chau (HK Island - School)' },
   
   // New Territories
-  'Wing Hau Street (Kwai Chung)',
-  'Shek Yam (Kwai Chung)',
-  'Shatin (Safe Driving Center)', // Designated School
-  'Yuen Long (Safe Driving Center)', // Designated School
-  'Tsuen Wan (Commercial)',
+  { id: 'wing_hau',     label: 'Wing Hau Street (Kwai Chung)' },
+  { id: 'shek_yam',     label: 'Shek Yam (Kwai Chung)' },
+  { id: 'shatin_safe',  label: 'Shatin (Safe Driving Center)' },
+  { id: 'yuen_long',    label: 'Yuen Long (Safe Driving Center)' },
+  { id: 'tsuen_wan',    label: 'Tsuen Wan (Commercial)' },
   
-  // Motorcycle Specific
-  'Duckling Hill (Tseung Kwan O)',
+  // Motorcycle
+  { id: 'duckling_hill',label: 'Duckling Hill (Tseung Kwan O)' },
 ];
 
-// --- EXAM ROUTES (Practice Areas) ---
-// Colloquial names used by instructors/students to describe the route
+export const getExamCenterLabel = (id: string) => getLabel(EXAM_CENTERS, id);
+
+
+// =========================================
+// 3. EXAM ROUTES (Linked to Centers)
+// =========================================
+// Added 'centerId' to link routes to specific exam centers
 export const EXAM_ROUTES = [
-  'Tin Kwong Road',
-  'Happy Valley',
-  'Pui Ching Road',
-  'Loyal Street',   // Often associated with Pui Ching/Chung Yee
-  'Wing Hau Street',
-  'Chung Yee Street',
-  'Shek Yam',
-  'Shatin',
-  'Yuen Long',
-  'So Kon Po',
-  'Yau Tong',
-  'Chak On Road',
-  'Pak Tin',
-  'Duckling Hill',
-  'Oil Street'      // Legacy/Occasional
+  // Tin Kwong Road
+  { id: 'tk_1', centerId: 'tin_kwong', label: 'Tin Kwong Road' },
+  { id: 'tk_2', centerId: 'tin_kwong', label: 'Ma Tau Wai Road' },
+  { id: 'tk_3', centerId: 'tin_kwong', label: 'To Kwa Wan Road' },
+
+  // Pui Ching Road
+  { id: 'pc_1', centerId: 'pui_ching', label: 'Pui Ching Road' },
+  { id: 'pc_2', centerId: 'pui_ching', label: 'Princess Margaret Road' },
+
+  // Happy Valley
+  { id: 'hv_1', centerId: 'happy_valley', label: 'Happy Valley' },
+  { id: 'hv_2', centerId: 'happy_valley', label: 'Ventris Road' },
+
+  // Loyal Street (Often grouped with Ho Man Tin/Pui Ching)
+  { id: 'ls_1', centerId: 'loyal_st',   label: 'Loyal Street' }, 
+  
+  // Wing Hau Street
+  { id: 'wh_1', centerId: 'wing_hau',   label: 'Wing Hau Street' },
+  { id: 'wh_2', centerId: 'wing_hau',   label: 'Kwai Shing Circuit' },
+
+  // Chung Yee Street
+  { id: 'cy_1', centerId: 'chung_yee',  label: 'Chung Yee Street' },
+  { id: 'cy_2', centerId: 'chung_yee',  label: 'Carmel Village Street' },
+
+  // Shek Yam
+  { id: 'sy_1', centerId: 'shek_yam',   label: 'Shek Yam' },
+  
+  // Shatin
+  { id: 'st_1', centerId: 'shatin_safe', label: 'Shatin Route 1' },
+  { id: 'st_2', centerId: 'shatin_safe', label: 'Shatin Route 2' },
+
+  // Yuen Long
+  { id: 'yl_1', centerId: 'yuen_long',  label: 'Yuen Long Route 1' },
+  { id: 'yl_2', centerId: 'yuen_long',  label: 'Yuen Long Route 2' },
+
+  // So Kon Po
+  { id: 'skp_1', centerId: 'so_kon_po',  label: 'So Kon Po' },
+  { id: 'skp_2', centerId: 'so_kon_po',  label: 'Caroline Hill Road' },
+
+  // Yau Tong
+  { id: 'yt_1', centerId: 'yau_tong',   label: 'Yau Tong' },
+  { id: 'yt_2', centerId: 'yau_tong',   label: 'Ko Chiu Road' },
+
+  // Chak On Road
+  { id: 'co_1', centerId: 'chak_on',    label: 'Chak On Road' },
+
+  // Pak Tin
+  { id: 'pt_1', centerId: 'pak_tin',    label: 'Pak Tin' },
+
+  // Duckling Hill
+  { id: 'dh_1', centerId: 'duckling_hill', label: 'Duckling Hill' },
+  
+  // Ap Lei Chau
+  { id: 'alc_1', centerId: 'ap_lei_chau', label: 'Ap Lei Chau' },
+  
+  // Tsuen Wan
+  { id: 'tw_1', centerId: 'tsuen_wan', label: 'Tsuen Wan' },
 ];
 
-// --- LESSON MEETING POINTS ---
-// Common places where instructors pick up students
+export const getExamRouteLabel = (id: string) => getLabel(EXAM_ROUTES, id);
+
+
+// =========================================
+// 4. LESSON LOCATIONS
+// =========================================
 export const LESSON_LOCATIONS = [
-  'Kowloon Tong (MTR)',
-  'Sham Shui Po',
-  'Nam Cheong',
-  'Pui Ching',
-  'Happy Valley',
-  'Tin Kwong Road',
-  'Yau Tong',
-  'Shatin',
-  'Yuen Long',
-  'Tsuen Wan',
+  { id: 'kowloon_tong', label: 'Kowloon Tong (MTR)' },
+  { id: 'sham_shui_po', label: 'Sham Shui Po' },
+  { id: 'nam_cheong',   label: 'Nam Cheong' },
+  { id: 'pui_ching',    label: 'Pui Ching' },
+  { id: 'happy_valley', label: 'Happy Valley' },
+  { id: 'tin_kwong',    label: 'Tin Kwong Road' },
+  { id: 'yau_tong',     label: 'Yau Tong' },
+  { id: 'shatin',       label: 'Shatin' },
+  { id: 'yuen_long',    label: 'Yuen Long' },
+  { id: 'tsuen_wan',    label: 'Tsuen Wan' },
 ];
+export const getLessonLocationLabel = (id: string) => getLabel(LESSON_LOCATIONS, id);
+
+
+// =========================================
+// 5. BLOCK REASONS
+// =========================================
+export const BLOCK_REASONS = [
+  { id: 'lunch',       label: 'Lunch' },
+  { id: 'personal',    label: 'Personal' },
+  { id: 'maintenance', label: 'Maintenance' },
+  { id: 'holiday',     label: 'Holiday' },
+];
+export const getBlockReasonLabel = (id: string) => getLabel(BLOCK_REASONS, id);
+
+
+// =========================================
+// 6. DURATIONS
+// =========================================
+export const LESSON_DURATIONS = [40, 45, 60];

@@ -8,6 +8,9 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+// --- CHANGE 1: Import Helper ---
+import { getVehicleLabel } from '../../constants/list';
+
 interface Props {
   userProfile: any;
   userEmail: string | null;
@@ -55,7 +58,7 @@ export function ProfileView({
   return (
     <div className="pb-20 grid grid-cols-1 md:grid-cols-2 gap-6">
       
-      {/* COLUMN 1: IDENTITY CARD (Now with Edit & Phone) */}
+      {/* COLUMN 1: IDENTITY CARD (Same as before) */}
       <div className="space-y-6">
         <div className={`p-8 rounded-3xl border shadow-lg overflow-hidden sticky top-24 ${cardClass}`}>
             
@@ -105,16 +108,12 @@ export function ProfileView({
 
                 {/* DETAILS LIST (Email & Phone) */}
                 <div className={`w-full space-y-3 pt-6 border-t ${isDark ? 'border-white/10' : 'border-black/5'}`}>
-                    
-                    {/* Email */}
                     <div className="flex items-center justify-between p-3 rounded-xl bg-black/5 dark:bg-white/5">
                         <div className="flex items-center gap-3">
                             <Mail size={16} className={textMuted} />
                             <span className="text-sm font-bold opacity-80 truncate max-w-[160px]">{userEmail}</span>
                         </div>
                     </div>
-
-                    {/* Phone (Read-Only) */}
                     <div className="flex items-center justify-between p-3 rounded-xl bg-black/5 dark:bg-white/5 relative overflow-hidden">
                         <div className="flex items-center gap-3">
                             <Phone size={16} className={textMuted} />
@@ -124,14 +123,11 @@ export function ProfileView({
                             <Smartphone size={10} /> Linked
                         </div>
                     </div>
-                    
-                    {/* Helper Text */}
                     <p className="text-[10px] text-center opacity-40 px-4 leading-relaxed">
                         To update your phone number, please contact your instructor to verify and re-invite you.
                     </p>
                 </div>
                 
-                {/* Trigger Edit (If not editing) */}
                 {!isEditing && (
                      <button 
                         onClick={() => { setNewName(userProfile?.name); setIsEditing(true); }}
@@ -142,13 +138,12 @@ export function ProfileView({
                 )}
             </div>
 
-            {/* Background Decor */}
             <div className="absolute -top-10 -right-10 w-40 h-40 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
             <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
         </div>
       </div>
 
-      {/* COLUMN 2: INSTRUCTORS (Same as before) */}
+      {/* COLUMN 2: INSTRUCTORS */}
       <div className="space-y-6">
         <h3 className="text-lg font-bold px-1 flex items-center gap-2">
             <Shield size={20} className="text-primary" /> Linked Instructors
@@ -166,7 +161,8 @@ export function ProfileView({
                             <div>
                                 <h4 className="font-bold text-lg leading-tight">{instructor?.name || 'Unknown Instructor'}</h4>
                                 <p className={`text-xs uppercase tracking-wider font-bold mt-1 ${textMuted}`}>
-                                    {profile.vehicle || 'Vehicle Not Set'}
+                                    {/* CHANGE 2: Use helper */}
+                                    {getVehicleLabel(profile.vehicle) || 'Vehicle Not Set'}
                                 </p>
                             </div>
                         </div>

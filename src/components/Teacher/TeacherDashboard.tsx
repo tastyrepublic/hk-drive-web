@@ -24,8 +24,7 @@ import { ConfirmModal } from '../Modals/ConfirmModal';
 import { useLessonManager } from '../../hooks/useLessonManager';
 import { useStudentManager } from '../../hooks/useStudentManager';
 
-// Import List
-import { VEHICLE_TYPES } from '../../constants/list';
+import { VEHICLE_TYPES, DEFAULT_VEHICLE_ID } from '../../constants/list';
 
 // --- TYPES ---
 type Tab = 'diary' | 'students' | 'payments' | 'settings';
@@ -85,22 +84,20 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
   // --- UI STATE ---
   const [editingSlot, setEditingSlot] = useState<any | null>(null);
   
-  // Default to first vehicle type
   const [editForm, setEditForm] = useState<LessonForm>({ 
       date: '', 
       time: '', 
       location: '', 
-      type: VEHICLE_TYPES[0] 
+      type: DEFAULT_VEHICLE_ID 
   });
 
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
   
-  // Default to first vehicle type
   const [studentForm, setStudentForm] = useState({ 
       id: '', 
       name: '', 
       phone: '', 
-      vehicle: VEHICLE_TYPES[0], 
+      vehicle: DEFAULT_VEHICLE_ID, 
       examRoute: 'Not Assigned', 
       balance: 10 
   });
@@ -165,7 +162,7 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
   const isSlotModified = isFormValid && hasChanges;
   const isStudentModified = isEditingStudent ? JSON.stringify(studentForm) !== JSON.stringify(originalStudent) : (studentForm.name.trim() !== '' && studentForm.phone.trim() !== '');
 
-  // --- ACTIONS (Wrappers around Hooks) ---
+  // --- ACTIONS ---
   
   const saveSlotEdit = async () => { 
     await saveLesson(
@@ -174,7 +171,13 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
       (successMsg: string) => { 
         setEditingSlot(null); 
         setValidationMsg(''); 
-        setEditForm({ date: '', time: '', location: '', type: VEHICLE_TYPES[0] }); 
+        
+        // --- IMPROVEMENT: Reset Lesson Form to Teacher's Preferred Vehicle ---
+        const preferredVehicle = (profile?.vehicleTypes && profile.vehicleTypes.length > 0) 
+            ? profile.vehicleTypes[0] 
+            : DEFAULT_VEHICLE_ID;
+
+        setEditForm({ date: '', time: '', location: '', type: preferredVehicle }); 
         showToast(successMsg, 'success'); 
       }, 
       (errorMsg: string) => showToast(errorMsg, 'error')
@@ -340,7 +343,21 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
                     updateBalance={updateBalance} 
                     onSendInvite={sendInvite} 
                     openStudentModal={(stu: any) => { 
-                        setStudentForm(stu || { id: '', name: '', phone: '', vehicle: VEHICLE_TYPES[0], examRoute: 'Not Assigned', balance: 10 }); 
+                        // --- FIX: Check profile for teacher's preferred vehicle first ---
+                        // If profile.vehicleTypes exists and has items, pick the first one.
+                        // Otherwise, fall back to DEFAULT_VEHICLE_ID.
+                        const preferredVehicle = (profile?.vehicleTypes && profile.vehicleTypes.length > 0) 
+                            ? profile.vehicleTypes[0] 
+                            : DEFAULT_VEHICLE_ID;
+
+                        setStudentForm(stu || { 
+                            id: '', 
+                            name: '', 
+                            phone: '', 
+                            vehicle: preferredVehicle, // Use the dynamic default
+                            examRoute: 'Not Assigned', 
+                            balance: 10 
+                        }); 
                         setOriginalStudent(stu || null); 
                         setIsEditingStudent(!!stu); 
                         setIsStudentModalOpen(true); 
@@ -366,7 +383,7 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
         validationMsg={validationMsg} setValidationMsg={setValidationMsg} saveSlotLoading={saveSlotLoading} 
         isSlotModified={isSlotModified} onSave={saveSlotEdit} onDelete={handleDeleteSlotClick} 
         lessonDuration={Number(profile?.lessonDuration) || 45} students={students} 
-        vehicleTypes={profile?.vehicleTypes && profile.vehicleTypes.length > 0 ? profile.vehicleTypes : VEHICLE_TYPES} 
+        vehicleTypes={profile?.vehicleTypes && profile.vehicleTypes.length > 0 ? profile.vehicleTypes : VEHICLE_TYPES.map(v => v.id)} 
       />
       
       <StudentFormModal 
@@ -380,8 +397,8 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
         onCancelInvite={cancelInvite} 
         onUnlink={handleUnlinkStudent} 
         students={students}
-        // FIX: Removed vehicleTypes, Added showToast
         showToast={showToast}
+        teacherVehicles={profile?.vehicleTypes || []}
       />
     </div>
   );

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { db, auth } from '../../firebase';
-import { collection, query, where, onSnapshot, doc } from 'firebase/firestore'; // Removed getDoc
+import { collection, query, where, onSnapshot, doc } from 'firebase/firestore'; 
 import { signOut } from 'firebase/auth';
 import { 
   Car, Loader2, ArrowLeft, ChevronDown, 
@@ -13,7 +13,9 @@ import { DashboardView } from './DashboardView';
 import { ProfileView } from './ProfileView';
 import { ScheduleView } from './ScheduleView';
 import { PackagesView } from './PackagesView';
-// REMOVED StudentSettings import
+
+// --- CHANGE 1: Import Helper ---
+import { getVehicleLabel } from '../../constants/list';
 
 interface Props {
   userEmail: string | null;
@@ -21,7 +23,7 @@ interface Props {
   toggleTheme: () => void;
 }
 
-type View = 'dashboard' | 'profile' | 'schedule' | 'packages'; // REMOVED 'settings'
+type View = 'dashboard' | 'profile' | 'schedule' | 'packages'; 
 
 export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
   const [loading, setLoading] = useState(true);
@@ -47,12 +49,12 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
     exit: { opacity: 0, scale: 1.02, y: -10 },
   };
 
-  // 1. Initial Load Logic (Now Real-time for User Profile too)
+  // 1. Initial Load Logic
   useEffect(() => {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
 
-    // A. Real-time User Profile (Syncs name change instantly)
+    // A. Real-time User Profile
     const unsubUser = onSnapshot(doc(db, "users", uid), (snap) => {
         if (snap.exists()) setUserProfile(snap.data());
     });
@@ -192,7 +194,8 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
                                                           <div className={`space-y-1 transition-transform duration-200 ${isActive ? 'translate-x-1' : ''}`}>
                                                               <div className={`text-sm font-black tracking-tight ${isActive ? 'text-primary' : textColor}`}>{inst?.name || 'Instructor'}</div>
                                                               <div className="text-[10px] uppercase tracking-wider font-bold flex flex-col gap-0.5">
-                                                                  <span className={`flex items-center gap-1 ${isActive ? 'text-primary/90' : 'opacity-50'}`}><Car size={10} /> {p.vehicle || 'Standard'}</span>
+                                                                  {/* CHANGE 2: Use helper */}
+                                                                  <span className={`flex items-center gap-1 ${isActive ? 'text-primary/90' : 'opacity-50'}`}><Car size={10} /> {getVehicleLabel(p.vehicle) || 'Standard'}</span>
                                                                   <span className={`${isActive ? 'text-primary font-black scale-105 origin-left' : 'opacity-40'} transition-transform`}>{p.balance} Credits Available</span>
                                                               </div>
                                                           </div>
@@ -209,72 +212,25 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
                     </AnimatePresence>
                 </div>
 
-                {/* RIGHT: RESPONSIVE ACTIONS */}
+                {/* RIGHT: RESPONSIVE ACTIONS (Same as before) */}
                 <div className="flex items-center justify-end gap-1 sm:gap-2 w-auto md:w-auto flex-shrink-0 relative">
-                    
-                    {/* DESKTOP MENU */}
+                    {/* ... (Existing Menu Logic) ... */}
                     <div className={`flex items-center gap-2 transition-all duration-500 ease-in-out ${"absolute opacity-0 scale-90 pointer-events-none md:static md:opacity-100 md:scale-100 md:pointer-events-auto"}`}>
-                        <button 
-                            onClick={() => setCurrentView('profile')} 
-                            className={`p-1.5 sm:p-2 rounded-lg transition-colors ${currentView === 'profile' ? 'text-primary bg-primary/10' : 'text-textGrey hover:text-white hover:bg-white/10'}`}
-                            title="My Profile"
-                        >
-                            <User size={18} />
-                        </button>
-                        <button 
-                            onClick={toggleTheme} 
-                            className="p-1.5 sm:p-2 rounded-lg text-textGrey hover:text-white hover:bg-white/10 transition-colors"
-                            title="Toggle Theme"
-                        >
-                            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-                        </button>
-                        <button 
-                            onClick={() => signOut(auth)} 
-                            className="p-1.5 sm:p-2 rounded-lg text-textGrey hover:text-statusRed hover:bg-statusRed/10 transition-colors"
-                            title="Sign Out"
-                        >
-                            <LogOut size={18} />
-                        </button>
+                        <button onClick={() => setCurrentView('profile')} className={`p-1.5 sm:p-2 rounded-lg transition-colors ${currentView === 'profile' ? 'text-primary bg-primary/10' : 'text-textGrey hover:text-white hover:bg-white/10'}`}><User size={18} /></button>
+                        <button onClick={toggleTheme} className="p-1.5 sm:p-2 rounded-lg text-textGrey hover:text-white hover:bg-white/10 transition-colors">{theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}</button>
+                        <button onClick={() => signOut(auth)} className="p-1.5 sm:p-2 rounded-lg text-textGrey hover:text-statusRed hover:bg-statusRed/10 transition-colors"><LogOut size={18} /></button>
                     </div>
-                    
-                    {/* MOBILE TOGGLE */}
                     <div className={`transition-all duration-500 ease-in-out ${"md:absolute md:opacity-0 md:scale-90 md:pointer-events-none opacity-100 scale-100"}`}>
-                        <button 
-                            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} 
-                            className="p-2 rounded-lg text-textGrey hover:bg-white/10 transition-colors"
-                        >
-                            {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
-                        </button>
+                        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 rounded-lg text-textGrey hover:bg-white/10 transition-colors">{isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}</button>
                     </div>
-
-                    {/* MOBILE DROPDOWN */}
                     {isMobileMenuOpen && (
                         <>
                             <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setIsMobileMenuOpen(false)} />
                             <div className={`absolute top-14 right-0 w-56 rounded-xl border shadow-2xl p-2 flex flex-col gap-1 z-50 md:hidden animate-in zoom-in-95 duration-200 origin-top-right ${cardColor}`}>
-                                <button 
-                                    onClick={() => { setCurrentView('profile'); setIsMobileMenuOpen(false); }} 
-                                    className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-bold transition-colors ${currentView === 'profile' ? 'text-primary bg-primary/10' : (isDark ? 'text-textGrey hover:bg-white/10' : 'text-gray-600 hover:bg-black/5')}`}
-                                >
-                                    <User size={16} /> <span>My Profile</span>
-                                </button>
-                                
-                                <button 
-                                    onClick={() => { toggleTheme(); setIsMobileMenuOpen(false); }} 
-                                    className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-bold transition-colors ${isDark ? 'text-textGrey hover:bg-white/10' : 'text-gray-600 hover:bg-black/5'}`}
-                                >
-                                    {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />} 
-                                    <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
-                                </button>
-                                
+                                <button onClick={() => { setCurrentView('profile'); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-bold transition-colors ${currentView === 'profile' ? 'text-primary bg-primary/10' : (isDark ? 'text-textGrey hover:bg-white/10' : 'text-gray-600 hover:bg-black/5')}`}><User size={16} /> <span>My Profile</span></button>
+                                <button onClick={() => { toggleTheme(); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-bold transition-colors ${isDark ? 'text-textGrey hover:bg-white/10' : 'text-gray-600 hover:bg-black/5'}`}>{theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />} <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span></button>
                                 <div className={`h-[1px] my-1 mx-2 ${isDark ? 'bg-gray-800/50' : 'bg-gray-200'}`} />
-                                
-                                <button 
-                                    onClick={() => signOut(auth)} 
-                                    className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-bold text-statusRed hover:bg-statusRed/10 transition-colors"
-                                >
-                                    <LogOut size={16} /> <span>Log Out</span>
-                                </button>
+                                <button onClick={() => signOut(auth)} className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-bold text-statusRed hover:bg-statusRed/10 transition-colors"><LogOut size={16} /> <span>Log Out</span></button>
                             </div>
                         </>
                     )}
