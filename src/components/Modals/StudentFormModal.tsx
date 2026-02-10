@@ -2,10 +2,13 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   AlertTriangle, ChevronDown, Loader2, Trash2, 
   Share2, AlertCircle, Link2Off, Ban, Unlink,
-  Pencil, Send, Check, Smartphone, Copy, Lock // <--- Added Lock icon
+  Pencil, Send, Check, Smartphone, Copy, Lock 
 } from 'lucide-react';
 import { Modal } from './Modal'; 
 import { ConfirmModal } from './ConfirmModal';
+
+// --- 1. Import Config ---
+import { VEHICLE_TYPES, EXAM_CENTERS } from '../../constants/list'; 
 
 interface Props {
   isOpen: boolean;
@@ -21,16 +24,16 @@ interface Props {
   onSendInvite: (student: any) => Promise<void>;
   onCancelInvite: (id: string) => Promise<void>;
   onUnlink: (id: string) => Promise<void>;
-  vehicleTypes: string[];
+  // Removed vehicleTypes prop
   students: any[];
-  showToast?: (msg: string, type: 'success' | 'error') => void;
+  // Removed optional '?' - function is now required
+  showToast: (msg: string, type: 'success' | 'error') => void;
 }
 
 export function StudentFormModal({
   isOpen, setIsOpen, isEditing, studentForm, setStudentForm,
   studentError, saveStudentLoading, isStudentModified, onSave, onDelete, 
   onSendInvite, onCancelInvite, onUnlink,
-  vehicleTypes = ['Private Car (Auto) 1A'],
   students = [],
   showToast 
 }: Props) {
@@ -74,9 +77,7 @@ export function StudentFormModal({
   const isAlreadyLinked = !!liveStudent.uid;
   const hasActiveInvite = !isAlreadyLinked && !!liveStudent.inviteToken;
   
-  // SMART LOCK LOGIC: Phone is locked if global lock is on OR if connection exists
   const isPhoneLocked = isLocked || isAlreadyLinked || hasActiveInvite;
-
   const showPendingUI = hasActiveInvite || cancelLoading || inviteStatus !== 'idle';
 
   const duplicateStudent = useMemo(() => {
@@ -120,13 +121,16 @@ export function StudentFormModal({
         await Promise.all([onSendInvite(payload), minWait]);
         
         setInviteStatus('sent');
+        
+        // --- 2. NO TOAST HERE (As requested) ---
+        
         resetTimerRef.current = setTimeout(() => {
             setInviteStatus('idle');
         }, 2500);
-        showToast?.('Invitation sent to WhatsApp!', 'success');
+
      } catch (error) { 
          console.error(error); 
-         showToast?.('Failed to send invite', 'error');
+         showToast('Failed to send invite', 'error');
          setInviteStatus('idle');
      }
   };
@@ -139,7 +143,8 @@ export function StudentFormModal({
     
     navigator.clipboard.writeText(inviteLink).then(() => {
         setCopyStatus('copied');
-        showToast?.('Link copied to clipboard!', 'success');
+        // --- 3. Normal Toast Usage ---
+        showToast('Link copied to clipboard!', 'success');
         setTimeout(() => setCopyStatus('idle'), 2000);
     });
   };
@@ -150,10 +155,10 @@ export function StudentFormModal({
     const minWait = new Promise(resolve => setTimeout(resolve, 800));
     try {
         await Promise.all([onCancelInvite(studentForm.id), minWait]);
-        showToast?.('Invite link revoked', 'success');
+        showToast('Invite link revoked', 'success');
     } catch (e) { 
         console.error(e);
-        showToast?.('Failed to revoke link', 'error');
+        showToast('Failed to revoke link', 'error');
     } finally { 
         setCancelLoading(false); 
     }
@@ -168,11 +173,11 @@ export function StudentFormModal({
               setUnlinkLoading(true);
               try {
                   await onUnlink(studentForm.id);
-                  showToast?.('Device unlinked successfully', 'success');
+                  showToast('Device unlinked successfully', 'success');
                   setConfirmConfig(null);
               } catch (e) { 
                   console.error(e); 
-                  showToast?.('Failed to unlink device', 'error');
+                  showToast('Failed to unlink device', 'error');
               } finally { 
                   setUnlinkLoading(false); 
               }
@@ -246,7 +251,6 @@ export function StudentFormModal({
       >
         <div className="space-y-6 min-h-[100px] relative transition-all duration-300">
             
-            {/* EDIT TOGGLE */}
             {isEditing && isLocked && (
                 <button 
                     onClick={handleEnterEditMode}
@@ -278,11 +282,9 @@ export function StudentFormModal({
                 <div className="space-y-1">
                     <div className="flex justify-between items-center px-1">
                         <label className="text-[10px] text-textGrey uppercase font-black">Phone Number</label>
-                        {/* Show small lock icon + text if strictly locked due to invite/link */}
                         {(!isLocked && isPhoneLocked) && (
-                            <span className="flex items-center gap-1 text-[9px] font-bold text-orange uppercase tracking-wider">
-                                <Lock size={10} /> 
-                                {isAlreadyLinked ? 'Device Linked' : 'Invite Pending'}
+                            <span className="flex items-center gap-1 text-[9px] font-bold text-orange uppercase tracking-wider animate-pulse">
+                                <Lock size={10} /> {isAlreadyLinked ? 'Device Linked' : 'Invite Pending'}
                             </span>
                         )}
                     </div>
@@ -290,7 +292,6 @@ export function StudentFormModal({
                     <div className="relative">
                         <input 
                             type="text" 
-                            // SMART LOCK: Disabled if Locked OR Linked OR Invited
                             disabled={isPhoneLocked}
                             maxLength={12}
                             value={studentForm.phone} 
@@ -298,12 +299,10 @@ export function StudentFormModal({
                                 const onlyNums = e.target.value.replace(/\D/g, '');
                                 setStudentForm({...studentForm, phone: onlyNums});
                             }} 
-                            // Add opacity if strictly locked in edit mode to signal it's disabled
                             className={`${inputBase} ${isLocked ? inputView : inputEdit} 
                                 ${duplicateStudent && !isLocked ? 'border-statusRed' : ''} 
-                                ${(!isLocked && isPhoneLocked) ? 'opacity-50 cursor-not-allowed bg-gray-900/50' : ''}`} 
+                                ${(!isLocked && isPhoneLocked) ? 'opacity-50 cursor-not-allowed bg-gray-900/50 text-gray-400' : ''}`} 
                         />
-                        {/* Helper Icon inside input if strictly locked */}
                         {(!isLocked && isPhoneLocked) && (
                             <Lock className="absolute right-3 top-1/2 -translate-y-1/2 text-textGrey" size={14} />
                         )}
@@ -326,14 +325,15 @@ export function StudentFormModal({
                                 onChange={e => setStudentForm({...studentForm, vehicle: e.target.value})} 
                                 className={`${inputBase} ${isLocked ? inputView : inputEdit} appearance-none`}
                             >
-                                {vehicleTypes.map(v => <option key={v} value={v}>{v}</option>)}
+                                {/* DYNAMIC LIST */}
+                                {VEHICLE_TYPES.map(v => <option key={v} value={v}>{v}</option>)}
                             </select>
                             {!isLocked && <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-textGrey pointer-events-none" size={14} />}
                         </div>
                     </div>
 
                     <div className="space-y-1">
-                        <label className="text-[10px] text-textGrey uppercase font-black px-1">Exam Route</label>
+                        <label className="text-[10px] text-textGrey uppercase font-black px-1">Exam Center</label>
                         <div className="relative">
                             <select 
                                 value={studentForm.examRoute} 
@@ -342,14 +342,8 @@ export function StudentFormModal({
                                 className={`${inputBase} ${isLocked ? inputView : inputEdit} appearance-none`}
                             >
                                 <option>Not Assigned</option>
-                                <option>Tin Kwong Road</option>
-                                <option>Happy Valley</option>
-                                <option>Pui Ching Road</option>
-                                <option>Loyal Street</option>
-                                <option>Wing Hau Street</option>
-                                <option>Chung Yee Street</option>
-                                <option>Shek Yam</option>
-                                <option>Shatin</option>
+                                {/* DYNAMIC LIST */}
+                                {EXAM_CENTERS.map(c => <option key={c} value={c}>{c}</option>)}
                             </select>
                             {!isLocked && <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-textGrey pointer-events-none" size={14} />}
                         </div>
@@ -357,7 +351,7 @@ export function StudentFormModal({
                 </div>
             </div>
 
-            {/* --- MODERN CONNECTION SECTION --- */}
+            {/* --- CONNECTION SECTION --- */}
             {isEditing && studentForm.id && isLocked && (
                 <div className="mt-6 pt-6 border-t border-gray-800/50 animate-in fade-in slide-in-from-top-2 duration-300">
                     <div className="flex items-center justify-between mb-4 px-1">
@@ -365,7 +359,6 @@ export function StudentFormModal({
                     </div>
 
                     {isAlreadyLinked ? (
-                        /* --- STATE: CONNECTED (GREEN CARD) --- */
                         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-statusGreen/10 to-transparent border border-statusGreen/20 p-5">
                              <div className="flex items-start justify-between">
                                 <div className="flex gap-4">
@@ -392,20 +385,17 @@ export function StudentFormModal({
                              </div>
                         </div>
                     ) : (
-                        /* --- STATE: NOT CONNECTED (ORANGE GRADIENT) --- */
                         <div className={`relative overflow-hidden rounded-2xl border transition-all duration-500 ${
                             showPendingUI 
                             ? 'bg-gradient-to-br from-orange/20 via-red-500/10 to-transparent border-orange/30' 
                             : 'bg-gray-900/40 border-gray-800'
                         } p-1`}>
                             
-                            {/* Background Glow Effect */}
                             {showPendingUI && (
                                 <div className="absolute -top-10 -right-10 w-32 h-32 bg-orange/20 blur-3xl rounded-full pointer-events-none"></div>
                             )}
 
                             <div className="p-5 flex flex-col items-center text-center space-y-4 relative z-10">
-                                {/* Icon Circle */}
                                 <div className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-500 ${
                                     showPendingUI 
                                     ? 'bg-orange/20 text-orange shadow-[0_0_20px_rgba(249,115,22,0.2)] scale-110' 
@@ -414,7 +404,6 @@ export function StudentFormModal({
                                     {showPendingUI ? <Share2 size={28} /> : <Link2Off size={28} />}
                                 </div>
 
-                                {/* Text */}
                                 <div>
                                     <h4 className={`font-black text-lg ${showPendingUI ? 'text-white' : 'text-gray-400'}`}>
                                         {showPendingUI ? 'Invitation Sent' : 'Connect Student App'}
@@ -426,10 +415,8 @@ export function StudentFormModal({
                                     </p>
                                 </div>
 
-                                {/* Action Buttons */}
                                 <div className="w-full space-y-3">
                                     <div className="flex gap-3">
-                                        {/* Main WhatsApp Button */}
                                         <button
                                             onClick={handleInviteClick}
                                             disabled={inviteStatus === 'sending' || cancelLoading}
@@ -450,7 +437,6 @@ export function StudentFormModal({
                                             )}
                                         </button>
 
-                                        {/* Copy Link Button */}
                                         {showPendingUI && (
                                             <button
                                                 onClick={handleCopyLink}
@@ -470,7 +456,6 @@ export function StudentFormModal({
                                         )}
                                     </div>
 
-                                    {/* Revoke Button */}
                                     {showPendingUI && (
                                         <button 
                                             onClick={handleRevokeClick} 
