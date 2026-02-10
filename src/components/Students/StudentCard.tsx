@@ -1,14 +1,16 @@
-import { Edit2, Phone, Car, MapPin, MessageCircle, Share2, CheckCircle2 } from 'lucide-react';
+import { Edit2, Phone, Car, MapPin, MessageCircle, Share2, CheckCircle2, Clock, Link2Off } from 'lucide-react';
 
 interface Props {
   stu: any;
   updateBalance: (id: string, newBalance: number) => void;
   openStudentModal: (stu: any) => void;
-  onSendInvite: (student: any) => void; // <--- ADDED
+  onSendInvite: (student: any) => void;
 }
 
 export function StudentCard({ stu, updateBalance, openStudentModal, onSendInvite }: Props) {
+  // 1. Determine Status
   const isLinked = !!stu.uid;
+  const isPending = !isLinked && !!stu.inviteToken; // <--- NEW: Detects if invite was sent
 
   const openWhatsApp = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -18,11 +20,11 @@ export function StudentCard({ stu, updateBalance, openStudentModal, onSendInvite
 
   const sendInvite = (e: React.MouseEvent) => {
     e.stopPropagation();
-    onSendInvite(stu); // <--- UPDATED: Calls the secure generator
+    onSendInvite(stu);
   };
 
   return (
-    <div key={stu.id} className="bg-slate p-5 rounded-xl border border-gray-800 flex flex-col gap-4 transition-all duration-300 hover:border-gray-700 shadow-sm relative overflow-hidden">
+    <div key={stu.id} className="bg-slate p-5 rounded-xl border border-gray-800 flex flex-col gap-4 transition-all duration-300 hover:border-gray-700 shadow-sm relative overflow-hidden group">
       
       {/* Top Section: Profile & Status */}
       <div className="flex items-start justify-between">
@@ -33,13 +35,19 @@ export function StudentCard({ stu, updateBalance, openStudentModal, onSendInvite
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-bold text-lg text-white">{stu.name}</h3>
+              
+              {/* STATUS BADGES */}
               {isLinked ? (
                 <span className="flex items-center gap-1 text-[10px] font-black text-statusGreen bg-statusGreen/10 px-2 py-0.5 rounded-full border border-statusGreen/20">
                   <CheckCircle2 size={10} /> LINKED
                 </span>
+              ) : isPending ? (
+                <span className="flex items-center gap-1 text-[10px] font-black text-orange bg-orange/10 px-2 py-0.5 rounded-full border border-orange/20">
+                  <Clock size={10} /> PENDING
+                </span>
               ) : (
-                <span className="text-[10px] font-black text-orange bg-orange/10 px-2 py-0.5 rounded-full border border-orange/20">
-                  UNLINKED
+                <span className="flex items-center gap-1 text-[10px] font-black text-textGrey bg-white/5 px-2 py-0.5 rounded-full border border-white/10">
+                  <Link2Off size={10} /> NOT LINKED
                 </span>
               )}
             </div>
@@ -56,14 +64,18 @@ export function StudentCard({ stu, updateBalance, openStudentModal, onSendInvite
           </div>
         </div>
 
-        {/* Quick Invite Button */}
+        {/* Quick Invite Button (Show if Not Linked) */}
         {!isLinked && (
           <button 
             onClick={sendInvite}
-            className="flex items-center gap-2 px-3 py-2 bg-statusGreen text-black rounded-lg font-bold text-xs hover:bg-statusGreen/90 transition-all active:scale-95"
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg font-bold text-xs transition-all active:scale-95 ${
+                isPending 
+                ? 'bg-midnight text-orange border border-orange/30 hover:bg-orange/10' 
+                : 'bg-statusGreen text-black hover:bg-statusGreen/90'
+            }`}
           >
             <Share2 size={14} />
-            Invite
+            {isPending ? 'Resend' : 'Invite'}
           </button>
         )}
       </div>

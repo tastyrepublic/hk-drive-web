@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { db, auth } from '../../firebase';
-import { collection, query, where, onSnapshot, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc } from 'firebase/firestore'; // Removed getDoc
 import { signOut } from 'firebase/auth';
 import { 
   Car, Loader2, ArrowLeft, ChevronDown, 
-  Menu, LogOut, Sun, Moon, User, X // UPDATED: Swapped Settings for User
+  Menu, LogOut, Sun, Moon, User, X 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -13,7 +13,7 @@ import { DashboardView } from './DashboardView';
 import { ProfileView } from './ProfileView';
 import { ScheduleView } from './ScheduleView';
 import { PackagesView } from './PackagesView';
-import { StudentSettings } from './StudentSettings';
+// REMOVED StudentSettings import
 
 interface Props {
   userEmail: string | null;
@@ -21,7 +21,7 @@ interface Props {
   toggleTheme: () => void;
 }
 
-type View = 'dashboard' | 'profile' | 'schedule' | 'packages' | 'settings';
+type View = 'dashboard' | 'profile' | 'schedule' | 'packages'; // REMOVED 'settings'
 
 export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
   const [loading, setLoading] = useState(true);
@@ -35,8 +35,8 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
   const [lessons, setLessons] = useState<any[]>([]); 
 
   // Menu States
-  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false); // Left (Switch Profile)
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);   // Right (Mobile Toggle)
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   const profileMenuRef = useRef<HTMLDivElement>(null); 
   const profileButtonRef = useRef<HTMLButtonElement>(null);
@@ -47,17 +47,19 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
     exit: { opacity: 0, scale: 1.02, y: -10 },
   };
 
-  // 1. Initial Load Logic
+  // 1. Initial Load Logic (Now Real-time for User Profile too)
   useEffect(() => {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
 
-    getDoc(doc(db, "users", uid)).then(snap => {
+    // A. Real-time User Profile (Syncs name change instantly)
+    const unsubUser = onSnapshot(doc(db, "users", uid), (snap) => {
         if (snap.exists()) setUserProfile(snap.data());
     });
 
+    // B. Real-time Student Profiles
     const q = query(collection(db, "students"), where("uid", "==", uid));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubStudents = onSnapshot(q, (snapshot) => {
       const loadedProfiles = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       setProfiles(loadedProfiles);
       if (loadedProfiles.length > 0 && !activeProfile) {
@@ -66,7 +68,10 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+        unsubUser();
+        unsubStudents();
+    };
   }, []);
 
   // 2. Fetch Instructor details
@@ -99,12 +104,9 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent | TouchEvent) => {
       const target = event.target as Node;
-      
-      // Close Profile Menu
       if (isProfileMenuOpen && profileMenuRef.current && !profileMenuRef.current.contains(target) && profileButtonRef.current && !profileButtonRef.current.contains(target)) {
         setIsProfileMenuOpen(false);
       }
-      // Mobile menu is handled by the backdrop overlay
     };
     document.addEventListener('mousedown', handleClickOutside);
     document.addEventListener('touchstart', handleClickOutside);
@@ -210,7 +212,7 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
                 {/* RIGHT: RESPONSIVE ACTIONS */}
                 <div className="flex items-center justify-end gap-1 sm:gap-2 w-auto md:w-auto flex-shrink-0 relative">
                     
-                    {/* DESKTOP MENU: Icons visible on large screens */}
+                    {/* DESKTOP MENU */}
                     <div className={`flex items-center gap-2 transition-all duration-500 ease-in-out ${"absolute opacity-0 scale-90 pointer-events-none md:static md:opacity-100 md:scale-100 md:pointer-events-auto"}`}>
                         <button 
                             onClick={() => setCurrentView('profile')} 
@@ -309,7 +311,6 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
                           profiles={profiles} 
                           instructors={instructors} 
                           theme={theme} 
-                          onEdit={() => setCurrentView('settings')}
                         />
                     )}
 
@@ -324,13 +325,6 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
                         <PackagesView 
                           balance={activeProfile?.balance || 0} 
                           cardColor={cardColor} 
-                        />
-                    )}
-
-                    {currentView === 'settings' && (
-                        <StudentSettings
-                            userProfile={userProfile}
-                            theme={theme}
                         />
                     )}
 

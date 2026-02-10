@@ -3,7 +3,7 @@ import { db, auth } from '../../firebase';
 import { signOut, type User } from 'firebase/auth';
 import { 
   collection, query, where, onSnapshot, 
-  doc, setDoc, getDoc 
+  doc, setDoc, getDoc, updateDoc // <--- ADDED updateDoc
 } from 'firebase/firestore';
 import { 
   LogOut, Sun, Moon, 
@@ -22,7 +22,7 @@ import { ConfirmModal } from '../Modals/ConfirmModal';
 
 // Hooks
 import { useLessonManager } from '../../hooks/useLessonManager';
-import { useStudentManager } from '../../hooks/useStudentManager'; // <--- NEW IMPORT
+import { useStudentManager } from '../../hooks/useStudentManager';
 
 // --- TYPES ---
 type Tab = 'diary' | 'students' | 'payments' | 'settings';
@@ -77,7 +77,7 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
     sendInvite,
     cancelInvite, 
     loading: saveStudentLoading 
-  } = useStudentManager(user, students, showToast); // <--- INITIALIZE NEW HOOK
+  } = useStudentManager(user, students, showToast); 
 
   // --- UI STATE ---
   const [editingSlot, setEditingSlot] = useState<any | null>(null);
@@ -182,16 +182,12 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
     }); 
   };
 
-  // NEW: Simplified Handler using Hook
   const handleSaveStudent = async () => {
      await saveStudent(studentForm, isEditingStudent, () => {
          setIsStudentModalOpen(false);
-         // setSaveStudentLoading is handled inside hook, but we used a timeout in the UI before.
-         // The hook handles the main loading state, so we are good.
      });
   };
 
-  // NEW: Simplified Handler using Hook
   const handleDeleteStudentClick = () => { 
     if (!studentForm.id) return; 
     setConfirmDialog({ 
@@ -205,6 +201,22 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
           });
       } 
     }); 
+  };
+
+  // --- NEW UNLINK HANDLER ---
+  const handleUnlinkStudent = async (studentId: string) => {
+    try {
+        await updateDoc(doc(db, "students", studentId), {
+            uid: null,
+            inviteToken: null,
+            claimedAt: null,
+            inviteExpiresAt: null
+        });
+        showToast("Device unlinked. You can now send a new invite.", "success");
+    } catch (e) {
+        console.error(e);
+        showToast("Failed to unlink.", "error");
+    }
   };
   
   const saveProfile = async (profileOverride?: any) => { 
@@ -347,6 +359,7 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
         onDelete={handleDeleteStudentClick} // <--- Wrapped Function
         onSendInvite={sendInvite}
         onCancelInvite={cancelInvite} // <--- From Hook
+        onUnlink={handleUnlinkStudent} // <--- PASSED DOWN
         vehicleTypes={profile?.vehicleTypes || []} students={students}
       />
     </div>
