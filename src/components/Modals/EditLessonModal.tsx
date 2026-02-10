@@ -1,6 +1,8 @@
 import { AlertTriangle, Trash2, Loader2, Calendar, Clock, MapPin, Search, Car, Coffee } from 'lucide-react';
 import { Modal } from './Modal';
 import { useState, useEffect } from 'react';
+// Import centralized locations
+import { LESSON_LOCATIONS } from '../../constants/list';
 
 interface Props {
   editingSlot: any; 
@@ -15,7 +17,6 @@ interface Props {
   onDelete: () => void;
   lessonDuration: number;
   students: any[]; 
-  // NEW: Accept vehicle list from App.tsx
   vehicleTypes: string[]; 
 }
 
@@ -27,7 +28,6 @@ export function EditLessonModal({
   onSave, onDelete,
   lessonDuration = 45,
   students = [],
-  // NEW: Default if not provided
   vehicleTypes = ['Private Car (Auto) 1A'] 
 }: Props) {
 
@@ -38,7 +38,9 @@ export function EditLessonModal({
   const [showStudentDropdown, setShowStudentDropdown] = useState(false);
   
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
-  const predefinedLocations = ['Kowloon', 'HK Island', 'Pui Ching', 'Loyal'];
+  
+  // UPDATED: Use the imported list
+  const predefinedLocations = LESSON_LOCATIONS;
   const blockReasons = ['Lunch', 'Personal', 'Maintenance', 'Holiday'];
   const blockDurations = [15, 30, 45, 60, 90, 120];
 

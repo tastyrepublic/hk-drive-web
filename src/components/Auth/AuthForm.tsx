@@ -10,14 +10,15 @@ import {
 import { setDoc, doc, getDoc, collection, query, where, getDocs, limit } from 'firebase/firestore'; 
 import { 
   Loader2, Car, Check, User, Phone, Mail, Lock, Key, ArrowLeft, 
-  ShieldCheck, ArrowRight // <--- ADDED BACK
+  ShieldCheck, ArrowRight 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const VEHICLE_OPTIONS = [
-  'Private Car (Auto) 1A', 'Private Car (Manual) 1',
-  'Light Goods (Auto) 2A', 'Light Goods (Manual) 2'
-];
+// --- CHANGE 1: Import the centralized list ---
+import { VEHICLE_TYPES } from '../../constants/list';
+
+// DELETE THIS HARDCODED LIST:
+// const VEHICLE_OPTIONS = [ ... ];
 
 interface Props {
   role: 'teacher' | 'student';
@@ -240,7 +241,8 @@ export function AuthForm({ role, onLoginSuccess, onBack, theme }: Props) {
                                         <div className={`p-4 rounded-xl border space-y-3 ${isDark ? 'bg-midnight/50 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
                                             <label className={`text-[10px] uppercase font-black ${subTextColor}`}>Teaching Categories</label>
                                             <div className="grid grid-cols-1 gap-2">
-                                                {VEHICLE_OPTIONS.map(v => (
+                                                {/* --- CHANGE 2: Use VEHICLE_TYPES here --- */}
+                                                {VEHICLE_TYPES.map(v => (
                                                     <button key={v} type="button" onClick={() => setSelectedVehicles(prev => prev.includes(v) ? prev.filter(i => i !== v) : [...prev, v])} className={`p-3 rounded-lg border flex items-center justify-between transition-all text-xs font-bold ${selectedVehicles.includes(v) ? 'bg-primary text-white border-primary' : `${isDark ? 'bg-transparent text-textGrey border-gray-700' : 'bg-white text-gray-500 border-gray-200'}`}`}>
                                                         <div className="flex items-center gap-3"><Car size={16} /><span>{v}</span></div>{selectedVehicles.includes(v) && <Check size={16} />}
                                                     </button>

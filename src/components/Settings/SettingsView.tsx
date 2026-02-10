@@ -1,14 +1,8 @@
 import { useState, useEffect } from 'react';
 import { SettingsSidebar } from './SettingsSidebar';
 import { User as UserIcon, Clock, Landmark, ShieldCheck, Save, Loader2, Car, Check } from 'lucide-react';
-
-// Common HK Private Driving Categories (Group 1 PDI)
-const VEHICLE_OPTIONS = [
-  'Private Car (Auto) 1A',
-  'Private Car (Manual) 1',
-  'Light Goods (Auto) 2A', 
-  'Light Goods (Manual) 2'
-];
+// Import the centralized list
+import { VEHICLE_TYPES } from '../../constants/list'; 
 
 interface Props {
   profile: any;
@@ -31,11 +25,12 @@ export function SettingsView({ profile, setProfile, onSave, isLoading }: Props) 
   // --- CALCULATE MODIFIED STATE LOCALLY ---
   const isModified = JSON.stringify(draftProfile) !== JSON.stringify(profile);
 
-  // --- NEW: VALIDATION CHECK ---
+  // --- VALIDATION CHECK ---
   // Ensure at least one vehicle type is selected
   const hasVehicleTypes = draftProfile.vehicleTypes && draftProfile.vehicleTypes.length > 0;
 
   // --- TOGGLE VEHICLE HELPER ---
+  // (Your original logic preserved: allows deselecting all, relies on validation to block save)
   const toggleVehicle = (vehicle: string) => {
     const currentList = draftProfile.vehicleTypes || []; 
     if (currentList.includes(vehicle)) {
@@ -96,7 +91,8 @@ export function SettingsView({ profile, setProfile, onSave, isLoading }: Props) 
                     <Car className={!hasVehicleTypes ? 'text-statusRed' : 'text-orange'} /> Teaching Categories
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {VEHICLE_OPTIONS.map(v => {
+                {/* Updated to use VEHICLE_TYPES from list.ts */}
+                {VEHICLE_TYPES.map(v => {
                     const isSelected = (draftProfile.vehicleTypes || []).includes(v);
                     return (
                     <button
@@ -117,6 +113,7 @@ export function SettingsView({ profile, setProfile, onSave, isLoading }: Props) 
                     );
                 })}
                 </div>
+                {/* Existing Warning Message Preserved */}
                 {!hasVehicleTypes && (
                     <p className="text-xs text-statusRed font-bold px-1 mt-3 flex items-center gap-1 animate-pulse">
                        * You must select at least one vehicle category.
@@ -196,7 +193,6 @@ export function SettingsView({ profile, setProfile, onSave, isLoading }: Props) 
         <div className="flex justify-end pt-4">
           <button 
             onClick={handleSave} 
-            // FIX: DISABLE IF NO VEHICLE SELECTED
             disabled={isLoading || !isModified || !hasVehicleTypes}
             className="w-full md:w-auto h-[52px] min-w-[180px] px-10 bg-statusGreen text-black rounded-xl font-bold text-lg transition-all duration-300 shadow-lg flex justify-center items-center gap-2 hover:brightness-110 active:scale-95 disabled:opacity-30 disabled:grayscale disabled:cursor-not-allowed"
           >

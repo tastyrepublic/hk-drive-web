@@ -3,7 +3,7 @@ import { db, auth } from '../../firebase';
 import { signOut, type User } from 'firebase/auth';
 import { 
   collection, query, where, onSnapshot, 
-  doc, setDoc, getDoc, updateDoc // <--- ADDED updateDoc
+  doc, setDoc, getDoc, updateDoc 
 } from 'firebase/firestore';
 import { 
   LogOut, Sun, Moon, 
@@ -23,6 +23,9 @@ import { ConfirmModal } from '../Modals/ConfirmModal';
 // Hooks
 import { useLessonManager } from '../../hooks/useLessonManager';
 import { useStudentManager } from '../../hooks/useStudentManager';
+
+// Import List
+import { VEHICLE_TYPES } from '../../constants/list';
 
 // --- TYPES ---
 type Tab = 'diary' | 'students' | 'payments' | 'settings';
@@ -81,10 +84,27 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
 
   // --- UI STATE ---
   const [editingSlot, setEditingSlot] = useState<any | null>(null);
-  const [editForm, setEditForm] = useState<LessonForm>({ date: '', time: '', location: '', type: 'Private Car' });
+  
+  // Default to first vehicle type
+  const [editForm, setEditForm] = useState<LessonForm>({ 
+      date: '', 
+      time: '', 
+      location: '', 
+      type: VEHICLE_TYPES[0] 
+  });
 
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
-  const [studentForm, setStudentForm] = useState({ id: '', name: '', phone: '', vehicle: 'Private Car (Auto) 1A', examRoute: 'Not Assigned', balance: 10 });
+  
+  // Default to first vehicle type
+  const [studentForm, setStudentForm] = useState({ 
+      id: '', 
+      name: '', 
+      phone: '', 
+      vehicle: VEHICLE_TYPES[0], 
+      examRoute: 'Not Assigned', 
+      balance: 10 
+  });
+  
   const [originalStudent, setOriginalStudent] = useState<any>(null);
   const [isEditingStudent, setIsEditingStudent] = useState(false);
   
@@ -154,7 +174,7 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
       (successMsg: string) => { 
         setEditingSlot(null); 
         setValidationMsg(''); 
-        setEditForm({ date: '', time: '', location: '', type: 'Private Car' }); 
+        setEditForm({ date: '', time: '', location: '', type: VEHICLE_TYPES[0] }); 
         showToast(successMsg, 'success'); 
       }, 
       (errorMsg: string) => showToast(errorMsg, 'error')
@@ -203,7 +223,6 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
     }); 
   };
 
-  // --- NEW UNLINK HANDLER ---
   const handleUnlinkStudent = async (studentId: string) => {
     try {
         await updateDoc(doc(db, "students", studentId), {
@@ -318,10 +337,10 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
             <div className="animate-in fade-in zoom-in-[0.99] duration-300">
                 <StudentsView 
                     students={students} 
-                    updateBalance={updateBalance} // <--- From Hook 
-                    onSendInvite={sendInvite} // <--- From Hook (Passed Down)
+                    updateBalance={updateBalance} 
+                    onSendInvite={sendInvite} 
                     openStudentModal={(stu: any) => { 
-                        setStudentForm(stu || { id: '', name: '', phone: '', vehicle: 'Private Car (Auto) 1A', examRoute: 'Not Assigned', balance: 10 }); 
+                        setStudentForm(stu || { id: '', name: '', phone: '', vehicle: VEHICLE_TYPES[0], examRoute: 'Not Assigned', balance: 10 }); 
                         setOriginalStudent(stu || null); 
                         setIsEditingStudent(!!stu); 
                         setIsStudentModalOpen(true); 
@@ -347,20 +366,22 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
         validationMsg={validationMsg} setValidationMsg={setValidationMsg} saveSlotLoading={saveSlotLoading} 
         isSlotModified={isSlotModified} onSave={saveSlotEdit} onDelete={handleDeleteSlotClick} 
         lessonDuration={Number(profile?.lessonDuration) || 45} students={students} 
-        vehicleTypes={profile?.vehicleTypes && profile.vehicleTypes.length > 0 ? profile.vehicleTypes : ['Private Car (Auto) 1A']} 
+        vehicleTypes={profile?.vehicleTypes && profile.vehicleTypes.length > 0 ? profile.vehicleTypes : VEHICLE_TYPES} 
       />
       
       <StudentFormModal 
         isOpen={isStudentModalOpen} setIsOpen={setIsStudentModalOpen} isEditing={isEditingStudent} 
         studentForm={studentForm} setStudentForm={setStudentForm} studentError={studentError} 
-        saveStudentLoading={saveStudentLoading} // <--- From Hook 
+        saveStudentLoading={saveStudentLoading} 
         isStudentModified={isStudentModified} 
-        onSave={handleSaveStudent} // <--- Wrapped Function
-        onDelete={handleDeleteStudentClick} // <--- Wrapped Function
+        onSave={handleSaveStudent} 
+        onDelete={handleDeleteStudentClick} 
         onSendInvite={sendInvite}
-        onCancelInvite={cancelInvite} // <--- From Hook
-        onUnlink={handleUnlinkStudent} // <--- PASSED DOWN
-        vehicleTypes={profile?.vehicleTypes || []} students={students}
+        onCancelInvite={cancelInvite} 
+        onUnlink={handleUnlinkStudent} 
+        students={students}
+        // FIX: Removed vehicleTypes, Added showToast
+        showToast={showToast}
       />
     </div>
   );
