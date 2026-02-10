@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   AlertTriangle, ChevronDown, Loader2, Trash2, 
   Share2, AlertCircle, Link2Off, Ban, Unlink,
-  Pencil, Send, Check, Smartphone, Copy 
+  Pencil, Send, Check, Smartphone, Copy, Lock // <--- Added Lock icon
 } from 'lucide-react';
 import { Modal } from './Modal'; 
 import { ConfirmModal } from './ConfirmModal';
@@ -74,6 +74,9 @@ export function StudentFormModal({
   const isAlreadyLinked = !!liveStudent.uid;
   const hasActiveInvite = !isAlreadyLinked && !!liveStudent.inviteToken;
   
+  // SMART LOCK LOGIC: Phone is locked if global lock is on OR if connection exists
+  const isPhoneLocked = isLocked || isAlreadyLinked || hasActiveInvite;
+
   const showPendingUI = hasActiveInvite || cancelLoading || inviteStatus !== 'idle';
 
   const duplicateStudent = useMemo(() => {
@@ -117,13 +120,10 @@ export function StudentFormModal({
         await Promise.all([onSendInvite(payload), minWait]);
         
         setInviteStatus('sent');
-        
         resetTimerRef.current = setTimeout(() => {
             setInviteStatus('idle');
         }, 2500);
-
         showToast?.('Invitation sent to WhatsApp!', 'success');
-
      } catch (error) { 
          console.error(error); 
          showToast?.('Failed to send invite', 'error');
@@ -276,18 +276,39 @@ export function StudentFormModal({
                 </div>
 
                 <div className="space-y-1">
-                    <label className="text-[10px] text-textGrey uppercase font-black px-1">Phone Number</label>
-                    <input 
-                        type="text" 
-                        disabled={isLocked}
-                        maxLength={12}
-                        value={studentForm.phone} 
-                        onChange={e => {
-                            const onlyNums = e.target.value.replace(/\D/g, '');
-                            setStudentForm({...studentForm, phone: onlyNums});
-                        }} 
-                        className={`${inputBase} ${isLocked ? inputView : inputEdit} ${duplicateStudent && !isLocked ? 'border-statusRed' : ''}`} 
-                    />
+                    <div className="flex justify-between items-center px-1">
+                        <label className="text-[10px] text-textGrey uppercase font-black">Phone Number</label>
+                        {/* Show small lock icon + text if strictly locked due to invite/link */}
+                        {(!isLocked && isPhoneLocked) && (
+                            <span className="flex items-center gap-1 text-[9px] font-bold text-orange uppercase tracking-wider">
+                                <Lock size={10} /> 
+                                {isAlreadyLinked ? 'Device Linked' : 'Invite Pending'}
+                            </span>
+                        )}
+                    </div>
+                    
+                    <div className="relative">
+                        <input 
+                            type="text" 
+                            // SMART LOCK: Disabled if Locked OR Linked OR Invited
+                            disabled={isPhoneLocked}
+                            maxLength={12}
+                            value={studentForm.phone} 
+                            onChange={e => {
+                                const onlyNums = e.target.value.replace(/\D/g, '');
+                                setStudentForm({...studentForm, phone: onlyNums});
+                            }} 
+                            // Add opacity if strictly locked in edit mode to signal it's disabled
+                            className={`${inputBase} ${isLocked ? inputView : inputEdit} 
+                                ${duplicateStudent && !isLocked ? 'border-statusRed' : ''} 
+                                ${(!isLocked && isPhoneLocked) ? 'opacity-50 cursor-not-allowed bg-gray-900/50' : ''}`} 
+                        />
+                        {/* Helper Icon inside input if strictly locked */}
+                        {(!isLocked && isPhoneLocked) && (
+                            <Lock className="absolute right-3 top-1/2 -translate-y-1/2 text-textGrey" size={14} />
+                        )}
+                    </div>
+
                     {duplicateStudent && !isLocked && (
                         <div className="flex items-center gap-1.5 mt-1 text-statusRed text-[11px] font-bold">
                             <AlertCircle size={14} /> <span>Exists as "{duplicateStudent.name}"</span>
@@ -414,11 +435,9 @@ export function StudentFormModal({
                                             disabled={inviteStatus === 'sending' || cancelLoading}
                                             className={`flex-1 py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
                                                 inviteStatus === 'sent' 
-                                                    ? 'bg-orange text-white shadow-orange/20 shadow-lg' // <--- CHANGED TO ORANGE
+                                                    ? 'bg-orange text-white shadow-orange/20 shadow-lg' 
                                                     : showPendingUI
-                                                        // --- BUTTON: DARK STYLE (NO SHADOW) ---
                                                         ? 'bg-midnight text-orange border border-orange/30 hover:bg-orange/10' 
-                                                        // --- INITIAL STATE: ORANGE GRADIENT ---
                                                         : 'w-full bg-gradient-to-r from-orange to-red-500 text-white hover:brightness-110 shadow-lg shadow-orange/20' 
                                             }`}
                                         >
@@ -431,16 +450,14 @@ export function StudentFormModal({
                                             )}
                                         </button>
 
-                                        {/* Copy Link Button - Shows "Copied!" text */}
+                                        {/* Copy Link Button */}
                                         {showPendingUI && (
                                             <button
                                                 onClick={handleCopyLink}
-                                                // Only enable if we actually have a token to copy
                                                 disabled={!liveStudent.inviteToken}
-                                                // --- BUTTON: DARK STYLE (NO SHADOW) ---
                                                 className={`px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] border ${
                                                     copyStatus === 'copied'
-                                                    ? 'bg-orange text-white border-orange' // <--- CHANGED TO ORANGE
+                                                    ? 'bg-orange text-white border-orange' 
                                                     : 'bg-midnight text-orange border-orange/30 hover:bg-orange/10 disabled:opacity-30 disabled:cursor-not-allowed'
                                                 }`}
                                             >
