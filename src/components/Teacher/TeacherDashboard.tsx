@@ -24,7 +24,7 @@ import { ConfirmModal } from '../Modals/ConfirmModal';
 import { useLessonManager } from '../../hooks/useLessonManager';
 import { useStudentManager } from '../../hooks/useStudentManager';
 
-import { VEHICLE_TYPES, DEFAULT_VEHICLE_ID } from '../../constants/list';
+import { DEFAULT_VEHICLE_ID } from '../../constants/list';
 
 // --- TYPES ---
 type Tab = 'diary' | 'students' | 'payments' | 'settings';
@@ -59,10 +59,12 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
   const [students, setStudents] = useState<any[]>([]);
   
   const [profile, setProfile] = useState<any>({ 
-    name: '', phone: '', lessonDuration: 45, bankName: '', accountNo: '', vehicleTypes: [] 
+    name: '', phone: '', 
+    lessonDuration: 45, defaultDoubleLesson: false, 
+    bankName: '', accountNo: '', vehicleTypes: []
   });
   const [, setOriginalProfile] = useState<any>({ 
-    name: '', phone: '', lessonDuration: 45, bankName: '', accountNo: '', vehicleTypes: [] 
+    name: '', phone: '', lessonDuration: 45, defaultDoubleLesson: false, bankName: '', accountNo: '', vehicleTypes: [] 
   });
 
   const [saveProfileLoading, setSaveProfileLoading] = useState(false);
@@ -124,36 +126,97 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
       setStudents(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    // 3. Profile Fetch
+    // 3. Profile Fetch & FORM INITIALIZATION
     getDoc(doc(db, "instructors", user.uid)).then(snap => {
       if (snap.exists()) { 
         const data = snap.data();
-        const safeProfile = { ...data, vehicleTypes: data.vehicleTypes || [] };
+        const safeProfile: any = { ...data, vehicleTypes: data.vehicleTypes || [] };
+        
+        if (!safeProfile.lessonDuration) safeProfile.lessonDuration = 45;
+        if (safeProfile.defaultDoubleLesson === undefined) safeProfile.defaultDoubleLesson = false;
+
         setProfile(safeProfile); setOriginalProfile(safeProfile); 
+        
+        if (safeProfile.vehicleTypes && safeProfile.vehicleTypes.length > 0) {
+            const preferredVehicle = safeProfile.vehicleTypes[0];
+            setEditForm(prev => ({ ...prev, type: preferredVehicle }));
+            setStudentForm(prev => ({ ...prev, vehicle: preferredVehicle }));
+        }
       }
     });
 
     return () => { unsubSlots(); unsubStudents(); };
   }, [user]);
 
-  // --- EDIT FORM SYNC ---
-  useEffect(() => {
-    if (editingSlot?.id) {
-      setEditForm({
-        id: editingSlot.id,
-        studentId: editingSlot.studentId || '',
-        date: editingSlot.date,
-        time: editingSlot.time,
-        location: editingSlot.location || 'Kowloon',
-        type: editingSlot.type || '', 
-        isDouble: editingSlot.isDouble || false, 
-        status: editingSlot.status || 'Booked',
-        customDuration: editingSlot.customDuration || undefined 
-      });
-    }
-  }, [editingSlot]);
+  // --- CENTRALIZED EDIT FORM HANDLER ---
+  const handleSetEditingSlot = (slotOrUpdate: any) => { 
+    const slot = typeof slotOrUpdate === 'function' 
+        ? slotOrUpdate(editingSlot) 
+        : slotOrUpdate;
 
-  const handleSetEditingSlot = (value: any) => { setEditingSlot(value); if (!value) setValidationMsg(''); };
+    setEditingSlot(slot); 
+    
+    if (!slot) {
+        setValidationMsg('');
+        return;
+    }
+
+    const preferredVehicle = (profile?.vehicleTypes && profile.vehicleTypes.length > 0) 
+        ? profile.vehicleTypes[0] 
+        : DEFAULT_VEHICLE_ID;
+
+    if (slot.id) {
+        // --- A. EDITING EXISTING SLOT ---
+        setEditForm({
+            id: slot.id,
+            studentId: slot.studentId || '',
+            date: slot.date,
+            time: slot.time,
+            location: slot.location || '', 
+            type: slot.type || '', 
+            isDouble: slot.isDouble || false, 
+            status: slot.status || 'Booked',
+            customDuration: slot.customDuration || undefined 
+        });
+    } else {
+        // --- B. CREATING NEW SLOT ---
+        
+        // CHECK: Is this a "Grid Click" (has date) or "Add Button" (no date)?
+        if (!slot.date) {
+            // >>> FRESH START (Add Button) <<<
+            // FIX: Set date and time to empty strings so user must select them
+            setEditForm({
+                date: '', 
+                time: '',
+                location: '', 
+                type: preferredVehicle,
+                studentId: '',
+                isDouble: profile.defaultDoubleLesson ?? false,
+                status: 'Booked',
+                customDuration: undefined
+            });
+        } else {
+            // >>> STICKY START (Grid Click) <<<
+            setEditForm(prev => ({
+                ...prev, 
+                id: undefined,
+                studentId: '',
+                
+                // Enforce clicked date/time
+                date: slot.date,
+                time: slot.time,
+                
+                // Keep sticky location/type if available
+                location: '',
+                type: preferredVehicle,
+                
+                isDouble: profile.defaultDoubleLesson ?? false,
+                status: 'Booked',
+                customDuration: undefined
+            }));
+        }
+    }
+  };
   
   // Logic checks
   const isBlockMode = editForm.status === 'Blocked';
@@ -172,11 +235,11 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
         setEditingSlot(null); 
         setValidationMsg(''); 
         
-        // --- IMPROVEMENT: Reset Lesson Form to Teacher's Preferred Vehicle ---
         const preferredVehicle = (profile?.vehicleTypes && profile.vehicleTypes.length > 0) 
             ? profile.vehicleTypes[0] 
             : DEFAULT_VEHICLE_ID;
 
+        // Reset form to defaults after save
         setEditForm({ date: '', time: '', location: '', type: preferredVehicle }); 
         showToast(successMsg, 'success'); 
       }, 
@@ -333,7 +396,11 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
       <main className="max-w-4xl mx-auto p-4 sm:p-6">
         {activeTab === 'diary' && (
             <div className="animate-in fade-in zoom-in-[0.99] duration-300">
-                <DiaryView slots={processedSlots} setEditingSlot={setEditingSlot} setEditForm={setEditForm} lessonDuration={Number(profile?.lessonDuration) || 45} />
+                <DiaryView 
+                  slots={processedSlots} 
+                  setEditingSlot={handleSetEditingSlot} 
+                  lessonDuration={Number(profile?.lessonDuration) || 45} 
+                />
             </div>
         )}
         {activeTab === 'students' && (
@@ -343,9 +410,6 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
                     updateBalance={updateBalance} 
                     onSendInvite={sendInvite} 
                     openStudentModal={(stu: any) => { 
-                        // --- FIX: Check profile for teacher's preferred vehicle first ---
-                        // If profile.vehicleTypes exists and has items, pick the first one.
-                        // Otherwise, fall back to DEFAULT_VEHICLE_ID.
                         const preferredVehicle = (profile?.vehicleTypes && profile.vehicleTypes.length > 0) 
                             ? profile.vehicleTypes[0] 
                             : DEFAULT_VEHICLE_ID;
@@ -354,7 +418,7 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
                             id: '', 
                             name: '', 
                             phone: '', 
-                            vehicle: preferredVehicle, // Use the dynamic default
+                            vehicle: preferredVehicle, 
                             examRoute: 'Not Assigned', 
                             balance: 10 
                         }); 
@@ -378,12 +442,15 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
       </main>
 
       {/* MODALS */}
+      {/* UPDATED: Passing defaultDoubleLesson prop */}
       <EditLessonModal 
         editingSlot={editingSlot} editForm={editForm} setEditForm={setEditForm} setEditingSlot={handleSetEditingSlot} 
         validationMsg={validationMsg} setValidationMsg={setValidationMsg} saveSlotLoading={saveSlotLoading} 
         isSlotModified={isSlotModified} onSave={saveSlotEdit} onDelete={handleDeleteSlotClick} 
-        lessonDuration={Number(profile?.lessonDuration) || 45} students={students} 
-        vehicleTypes={profile?.vehicleTypes && profile.vehicleTypes.length > 0 ? profile.vehicleTypes : VEHICLE_TYPES.map(v => v.id)} 
+        lessonDuration={Number(profile?.lessonDuration) || 45} 
+        defaultDoubleLesson={!!profile?.defaultDoubleLesson} 
+        students={students} 
+        vehicleTypes={profile?.vehicleTypes && profile.vehicleTypes.length > 0 ? profile.vehicleTypes : []} 
       />
       
       <StudentFormModal 

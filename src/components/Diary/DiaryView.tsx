@@ -3,10 +3,12 @@ import { ChevronLeft, ChevronRight, Plus, Sparkles } from 'lucide-react';
 import { motion, useMotionValue, useTransform, animate, AnimatePresence } from 'framer-motion';
 import { DiaryCard } from './DiaryCard';
 
+// --- IMPORT SCHEDULER UTILITIES ---
+import { getSmartStartTime } from '../../scheduler';
+
 interface Props {
   slots: any[];
   setEditingSlot: (slot: any) => void;
-  setEditForm: (form: any) => void;
   lessonDuration: number; 
 }
 
@@ -40,7 +42,7 @@ const swipeTransition = {
   opacity: { duration: 0.2 }
 };
 
-export function DiaryView({ slots, setEditingSlot, setEditForm, lessonDuration }: Props) {
+export function DiaryView({ slots, setEditingSlot, lessonDuration }: Props) {
   const [[weekOffset, direction], setWeekOffset] = useState([0, 0]);
   const [nowPosition, setNowPosition] = useState(0);
   
@@ -50,46 +52,6 @@ export function DiaryView({ slots, setEditingSlot, setEditForm, lessonDuration }
   const scrollLimit = -(CONTENT_HEIGHT - containerHeight);
   
   const isDragging = useRef(false);
-
-  // --- NEW HELPERS FOR SMART TIME ---
-  const timeToMinutes = (time: string) => {
-    const [h, m] = time.split(':').map(Number);
-    return h * 60 + m;
-  };
-
-  const minutesToTime = (totalMinutes: number) => {
-    const h = Math.floor(totalMinutes / 60);
-    const m = totalMinutes % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-  };
-
-  const getSmartStartTime = (clickedHour: number, daySlots: any[]) => {
-    const clickedStartMins = clickedHour * 60;     
-    const clickedEndMins = (clickedHour + 1) * 60; 
-
-    let maxEndTime = clickedStartMins;
-
-    daySlots.forEach(slot => {
-        const startMins = timeToMinutes(slot.time);
-        
-        let duration = slot.duration; 
-        if (!duration) {
-             if (slot.customDuration) duration = slot.customDuration;
-             else duration = slot.isDouble ? lessonDuration * 2 : lessonDuration;
-        }
-
-        const endMins = startMins + duration;
-
-        if (endMins > clickedStartMins && startMins < clickedEndMins) {
-            if (endMins > maxEndTime) {
-                maxEndTime = endMins;
-            }
-        }
-    });
-
-    return minutesToTime(maxEndTime);
-  };
-  // ----------------------------------
 
   // --- PHYSICS ---
   const scaleY = useTransform(
@@ -207,7 +169,6 @@ export function DiaryView({ slots, setEditingSlot, setEditForm, lessonDuration }
             <button 
               onClick={() => {
                 setEditingSlot({}); 
-                setEditForm({ isDouble: true, location: '' }); 
               }}
               className="flex items-center gap-2 bg-orange text-white px-3 py-1.5 rounded-lg font-bold text-xs shadow-lg active:scale-95 transition-transform"
             >
@@ -329,23 +290,19 @@ export function DiaryView({ slots, setEditingSlot, setEditForm, lessonDuration }
                                   key={h} 
                                   style={{ height: CELL_HEIGHT, cursor: 'pointer' }}
                                   className={`w-full relative group hover:bg-white/5 transition-colors duration-200 ease-in-out ${idx === HOURS.length - 1 ? '' : 'border-b border-gray-800/30'}`}
-                                  
-                                  // SMART CLICK LOGIC
                                   onClick={(e) => {
                                       e.stopPropagation();
                                       if (isDragging.current) return;
                                       
-                                      const smartTime = getSmartStartTime(h, daySlots);
-
-                                      setEditForm({
+                                      // --- USE THE CENTRALIZED UTILITY ---
+                                      const smartTime = getSmartStartTime(h, daySlots, lessonDuration);
+                                      
+                                      setEditingSlot({
                                         date: dateString,
                                         time: smartTime, 
                                         location: '', 
-                                        // FIX: Set to empty to force user selection in Modal
                                         type: '', 
-                                        isDouble: true 
-                                      });
-                                      setEditingSlot({}); 
+                                      }); 
                                   }}
                                 >
                                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 ease-in-out pointer-events-none">
@@ -367,7 +324,6 @@ export function DiaryView({ slots, setEditingSlot, setEditForm, lessonDuration }
                                         key={slot.id} 
                                         slot={{ ...slot, duration: effectiveDuration }} 
                                         setEditingSlot={setEditingSlot} 
-                                        setEditForm={setEditForm} 
                                         isAbsolute={true} 
                                     />
                                 );

@@ -4,7 +4,7 @@ import {
   Share2, AlertCircle, Link2Off, Ban, Unlink,
   Pencil, Send, Check, Smartphone, Copy, Lock,
   User, Phone, Car, MapPin, 
-  Route as RouteIcon // Added Route Icon
+  Route as RouteIcon 
 } from 'lucide-react';
 import { Modal } from './Modal'; 
 import { ConfirmModal } from './ConfirmModal';
@@ -13,7 +13,7 @@ import { ConfirmModal } from './ConfirmModal';
 import { 
   VEHICLE_TYPES, 
   EXAM_CENTERS, 
-  EXAM_ROUTES, // Needed for the list
+  EXAM_ROUTES, 
   getVehicleLabel, 
   getExamCenterLabel 
 } from '../../constants/list'; 
@@ -68,12 +68,9 @@ export function StudentFormModal({
     return VEHICLE_TYPES.filter(v => teacherVehicles.includes(v.id));
   }, [teacherVehicles]);
 
-  // --- NEW: Calculate Routes for the View Mode ---
+  // --- Calculate Routes for the View Mode ---
   const relevantRoutes = useMemo(() => {
-    // If no center selected, return empty
     if (!studentForm.examRoute || studentForm.examRoute === 'Not Assigned') return [];
-    
-    // Filter routes that belong to this center ID
     return EXAM_ROUTES.filter(r => r.centerId === studentForm.examRoute);
   }, [studentForm.examRoute]);
 
@@ -215,8 +212,8 @@ export function StudentFormModal({
       });
   };
 
-  const inputBase = "w-full p-3 rounded-lg text-white transition-all outline-none";
-  const inputView = "bg-transparent border border-transparent px-0 font-bold opacity-100 cursor-default";
+  const inputBase = "w-full p-3 rounded-lg text-white transition-all outline-none pl-10"; // Added pl-10 globally
+  const inputView = "bg-transparent border border-transparent font-bold opacity-100 cursor-default";
   const inputEdit = "bg-midnight border border-gray-800 focus:border-orange";
 
   return (
@@ -301,13 +298,14 @@ export function StudentFormModal({
                 <div className="space-y-1">
                     <label className="text-[10px] text-textGrey uppercase font-black px-1">Full Name</label>
                     <div className="relative">
-                        <User className={`absolute left-3 top-3 ${isLocked ? 'hidden' : 'text-textGrey'}`} size={18} />
+                        {/* Always show User Icon */}
+                        <User className="absolute left-3 top-3 text-textGrey" size={18} />
                         <input 
                             type="text" 
                             disabled={isLocked}
                             value={studentForm.name} 
                             onChange={e => setStudentForm({...studentForm, name: e.target.value})} 
-                            className={`${inputBase} ${isLocked ? inputView : inputEdit} ${!isLocked ? 'pl-10' : ''}`} 
+                            className={`${inputBase} ${isLocked ? inputView : inputEdit}`} 
                         />
                     </div>
                 </div>
@@ -323,7 +321,8 @@ export function StudentFormModal({
                     </div>
                     
                     <div className="relative">
-                        <Phone className={`absolute left-3 top-3 ${isLocked ? 'hidden' : 'text-textGrey'}`} size={18} />
+                        {/* Always show Phone Icon */}
+                        <Phone className="absolute left-3 top-3 text-textGrey" size={18} />
                         <input 
                             type="text" 
                             disabled={isPhoneLocked}
@@ -334,7 +333,6 @@ export function StudentFormModal({
                                 setStudentForm({...studentForm, phone: onlyNums});
                             }} 
                             className={`${inputBase} ${isLocked ? inputView : inputEdit} 
-                                ${!isLocked ? 'pl-10' : ''}
                                 ${duplicateStudent && !isLocked ? 'border-statusRed' : ''} 
                                 ${(!isLocked && isPhoneLocked) ? 'opacity-50 cursor-not-allowed bg-gray-900/50 text-gray-400' : ''}`} 
                         />
@@ -357,8 +355,13 @@ export function StudentFormModal({
                         <label className="text-[10px] text-textGrey uppercase font-black px-1">Vehicle</label>
                         <div className="relative">
                             {isLocked ? (
-                                // Use Helper for Display
-                                <div className={`${inputBase} ${inputView}`}>{getVehicleLabel(studentForm.vehicle)}</div>
+                                // Locked View with Icon
+                                <div className="relative">
+                                    <Car className="absolute left-3 top-3 text-textGrey" size={18} />
+                                    <div className={`${inputBase} ${inputView} flex items-center h-[46px]`}>
+                                        {getVehicleLabel(studentForm.vehicle)}
+                                    </div>
+                                </div>
                             ) : (
                                 <>
                                     <div 
@@ -375,7 +378,6 @@ export function StudentFormModal({
                                     {showVehicleDropdown && (
                                         <div className="absolute bottom-full left-0 right-0 mb-1 bg-slate border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden">
                                             <div className="max-h-56 overflow-y-auto custom-scrollbar">
-                                                {/* Map over filtered Objects */}
                                                 {activeVehicleOptions.map((v) => (
                                                     <div 
                                                         key={v.id}
@@ -406,8 +408,15 @@ export function StudentFormModal({
                         <label className="text-[10px] text-textGrey uppercase font-black px-1">Exam Center</label>
                         <div className="relative">
                             {isLocked ? (
-                                // Use Helper for Display
-                                <div className={`${inputBase} ${inputView}`}>{getExamCenterLabel(studentForm.examRoute) || 'Not Assigned'}</div>
+                                // Locked View with Icon
+                                <div className="relative">
+                                    <MapPin className="absolute left-3 top-3 text-textGrey" size={18} />
+                                    <div className={`${inputBase} ${inputView} flex items-center h-[46px]`}>
+                                        <span className="truncate">
+                                            {getExamCenterLabel(studentForm.examRoute) || 'Not Assigned'}
+                                        </span>
+                                    </div>
+                                </div>
                             ) : (
                                 <>
                                     <div 
@@ -439,7 +448,6 @@ export function StudentFormModal({
                                                     {(!studentForm.examRoute || studentForm.examRoute === 'Not Assigned') && <Check size={16} />}
                                                 </div>
 
-                                                {/* Map Objects */}
                                                 {EXAM_CENTERS.map((c) => (
                                                     <div 
                                                         key={c.id}

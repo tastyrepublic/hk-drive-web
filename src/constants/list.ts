@@ -151,6 +151,7 @@ export const BLOCK_REASONS = [
   { id: 'personal',    label: 'Personal' },
   { id: 'maintenance', label: 'Maintenance' },
   { id: 'holiday',     label: 'Holiday' },
+  { id: 'diu',         label: 'Diu' },
 ];
 export const getBlockReasonLabel = (id: string) => getLabel(BLOCK_REASONS, id);
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { SettingsSidebar } from './SettingsSidebar';
-import { User as UserIcon, Clock, Landmark, ShieldCheck, Save, Loader2, Car, Check } from 'lucide-react';
+import { User as UserIcon, Clock, Landmark, ShieldCheck, Save, Loader2, Car, Check, Layers } from 'lucide-react';
 import { VEHICLE_TYPES, LESSON_DURATIONS } from '../../constants/list'; 
 
 interface Props {
@@ -25,7 +25,6 @@ export function SettingsView({ profile, setProfile, onSave, isLoading }: Props) 
   const isModified = JSON.stringify(draftProfile) !== JSON.stringify(profile);
 
   // --- VALIDATION CHECK ---
-  // Ensure at least one vehicle type is selected
   const hasVehicleTypes = draftProfile.vehicleTypes && draftProfile.vehicleTypes.length > 0;
 
   // --- TOGGLE VEHICLE HELPER ---
@@ -40,11 +39,8 @@ export function SettingsView({ profile, setProfile, onSave, isLoading }: Props) 
 
   // --- HANDLE SAVE ---
   const handleSave = async () => {
-    if (!hasVehicleTypes) return; // Double check
-    
-    // 1. Update the UI immediately
+    if (!hasVehicleTypes) return; 
     setProfile(draftProfile);
-    // 2. Pass the draft data directly to the database function
     await onSave(draftProfile);
   };
 
@@ -66,7 +62,7 @@ export function SettingsView({ profile, setProfile, onSave, isLoading }: Props) 
                   <label className="text-xs text-textGrey uppercase font-bold tracking-wider px-1">Display Name</label>
                   <input 
                     type="text" 
-                    value={draftProfile.name} 
+                    value={draftProfile.name || ''} 
                     onChange={e => setDraftProfile({ ...draftProfile, name: e.target.value })} 
                     className="w-full mt-1 p-3 bg-midnight border border-gray-700 rounded-lg text-white focus:border-orange outline-none transition-all duration-300" 
                   />
@@ -75,7 +71,7 @@ export function SettingsView({ profile, setProfile, onSave, isLoading }: Props) 
                   <label className="text-xs text-textGrey uppercase font-bold tracking-wider px-1">Phone</label>
                   <input 
                     type="text" 
-                    value={draftProfile.phone} 
+                    value={draftProfile.phone || ''} 
                     onChange={e => setDraftProfile({ ...draftProfile, phone: e.target.value })} 
                     className="w-full mt-1 p-3 bg-midnight border border-gray-700 rounded-lg text-white focus:border-orange outline-none transition-all duration-300" 
                   />
@@ -89,7 +85,6 @@ export function SettingsView({ profile, setProfile, onSave, isLoading }: Props) 
                     <Car className={!hasVehicleTypes ? 'text-statusRed' : 'text-orange'} /> Teaching Categories
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* UPDATED: Map over the ID-based list */}
                 {VEHICLE_TYPES.map(v => {
                     const isSelected = (draftProfile.vehicleTypes || []).includes(v.id);
                     return (
@@ -104,7 +99,6 @@ export function SettingsView({ profile, setProfile, onSave, isLoading }: Props) 
                     >
                         <div className="flex items-center gap-3">
                         <Car size={18} className={isSelected ? 'text-orange' : 'opacity-50'} />
-                        {/* Display Label, Save ID */}
                         <span className="font-bold text-sm">{v.label}</span>
                         </div>
                         {isSelected && <Check size={18} className="text-orange" />}
@@ -124,7 +118,7 @@ export function SettingsView({ profile, setProfile, onSave, isLoading }: Props) 
               <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
                 <Clock className="text-orange" /> Standard Duration
               </h2>
-              <div className="grid grid-cols-2 gap-4 mt-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
                 {LESSON_DURATIONS.map(dur => (
                   <button 
                     key={dur} 
@@ -140,6 +134,39 @@ export function SettingsView({ profile, setProfile, onSave, isLoading }: Props) 
                 ))}
               </div>
             </div>
+
+            {/* UPDATED: DEFAULT DOUBLE SESSION SETTING */}
+            <div className="bg-slate p-6 rounded-xl border border-gray-800 shadow-sm transition-colors duration-300">
+              <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                <Layers className="text-orange" /> Lesson Defaults
+              </h2>
+              
+              <div className="flex items-center justify-between p-4 bg-midnight rounded-xl border border-gray-700">
+                 <div className="space-y-1">
+                    <div className="font-bold text-white">Default to Double Session</div>
+                    <div className="text-xs text-textGrey">
+                        Automatically enable "Double Session" when creating a new lesson.
+                    </div>
+                 </div>
+                 
+                 <button 
+                    onClick={() => setDraftProfile({ 
+                        ...draftProfile, 
+                        defaultDoubleLesson: !draftProfile.defaultDoubleLesson 
+                    })}
+                    className={`w-14 h-8 rounded-full p-1 transition-all duration-300 ease-in-out relative ${
+                        draftProfile.defaultDoubleLesson 
+                        ? 'bg-orange' 
+                        : 'bg-gray-700'
+                    }`}
+                 >
+                     <div className={`w-6 h-6 bg-white rounded-full shadow-md transform transition-transform duration-300 ${
+                         draftProfile.defaultDoubleLesson ? 'translate-x-6' : 'translate-x-0'
+                     }`} />
+                 </button>
+              </div>
+            </div>
+
           </div>
         )}
 

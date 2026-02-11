@@ -21,6 +21,7 @@ interface Props {
   onSave: () => Promise<void>;
   onDelete: () => void;
   lessonDuration: number;
+  defaultDoubleLesson?: boolean; // UPDATED: Prop name
   students: any[]; 
   vehicleTypes: string[]; 
 }
@@ -32,8 +33,9 @@ export function EditLessonModal({
   saveSlotLoading, isSlotModified, 
   onSave, onDelete,
   lessonDuration = 45,
+  defaultDoubleLesson = false, // Default is false
   students = [],
-  vehicleTypes = ['1a'] // Default to ID '1a'
+  vehicleTypes = [] 
 }: Props) {
 
   const isOpen = !!editingSlot; 
@@ -41,15 +43,93 @@ export function EditLessonModal({
 
   const [studentQuery, setStudentQuery] = useState('');
   const [showStudentDropdown, setShowStudentDropdown] = useState(false);
-  
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   
-  const blockDurations = [15, 30, 45, 60, 90, 120];
+  // --- 1. SMART DEFAULT LOGIC ---
+  const primaryVehicle = vehicleTypes.length > 0 ? vehicleTypes[0] : '1a';
 
-  const singleTime = lessonDuration;
-  const doubleTime = lessonDuration * 2;
+  // --- 2. CALCULATE EFFECTIVE TYPE ---
+  const isCurrentTypeValid = vehicleTypes.includes(editForm.type);
+  const effectiveType = (isCurrentTypeValid || editForm.status === 'Blocked') 
+      ? editForm.type 
+      : primaryVehicle;
+
+  // =========================================================================
+  // SNAPSHOT STRATEGY (The "Active Mirror")
+  // =========================================================================
+  
+  const [lessonSnapshot, setLessonSnapshot] = useState<any>(null);
+  const [blockSnapshot, setBlockSnapshot] = useState<any>(null);
+
+  // --- A. INITIALIZATION (Runs once when modal opens) ---
+  useEffect(() => {
+    if (isOpen) {
+        // 1. Determine safe default "Lesson" state
+        const initialLessonState = (editingSlot?.status !== 'Blocked') 
+            ? { ...editingSlot, isDouble: editingSlot.isDouble ?? defaultDoubleLesson } // Use existing OR default
+            : {
+                ...editingSlot, 
+                status: 'Open',
+                type: primaryVehicle, 
+                studentId: '',
+                isDouble: defaultDoubleLesson, // Use default when resetting from Block
+                customDuration: undefined
+            };
+
+        // Fix "Stale Vehicle" bug
+        const isRealVehicle = vehicleTypes.includes(initialLessonState?.type);
+        if (!isRealVehicle) {
+            initialLessonState.type = primaryVehicle;
+        }
+
+        // 2. Determine safe default "Block" state
+        const initialBlockState = (editingSlot?.status === 'Blocked')
+            ? editingSlot
+            : {
+                ...editingSlot,
+                status: 'Blocked',
+                type: '', 
+                studentId: '', 
+                customDuration: 60,
+                isDouble: false
+            };
+
+        // 3. Seed the snapshots
+        setLessonSnapshot(initialLessonState);
+        setBlockSnapshot(initialBlockState);
+    }
+  }, [isOpen, editingSlot, primaryVehicle, vehicleTypes, defaultDoubleLesson]);
+
+
+  // --- B. ACTIVE MIRROR (Syncs changes to the correct snapshot) ---
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (editForm.status === 'Blocked') {
+        setBlockSnapshot(editForm);
+    } else {
+        setLessonSnapshot(editForm);
+    }
+  }, [editForm, isOpen]);
+
+
+  // --- C. AUTO-CORRECT TYPE (Legacy logic) ---
+  useEffect(() => {
+    if (isOpen && !isBlockMode && editForm.type !== effectiveType && effectiveType) {
+        setEditForm((prev: any) => ({ ...prev, type: effectiveType }));
+    }
+  }, [isOpen, editForm.status, effectiveType]);
+
+
+  // --- Standard Form Logic ---
   const isBlockMode = editForm.status === 'Blocked';
-
+  
+  // Define available block durations
+  const blockDurations = [15, 30, 45, 60, 90, 120]; 
+  
+  const singleTime = lessonDuration;
+  const doubleTime = lessonDuration * 2; 
+  
   const currentDuration = isBlockMode 
     ? (editForm.customDuration || singleTime) 
     : (editForm.isDouble ? doubleTime : singleTime);
@@ -63,6 +143,7 @@ export function EditLessonModal({
   };
   const currentEndTime = calculateEndTime(editForm.time, currentDuration);
 
+  // Sync Student Name
   useEffect(() => {
     if (isOpen && editForm.studentId) {
       const match = students.find(s => s.id === editForm.studentId);
@@ -79,11 +160,13 @@ export function EditLessonModal({
   };
 
   const handleFullDay = () => {
-      handleChange('time', '09:00'); 
-      handleChange('customDuration', 540); 
+      setEditForm((prev: any) => ({
+          ...prev,
+          time: '09:00',
+          customDuration: 540
+      }));
   };
 
-  // --- FILTER: Compare IDs (editForm.type is ID, s.vehicle is ID) ---
   const filteredStudents = students.filter(s => {
     const matchesName = s.name.toLowerCase().includes(studentQuery.toLowerCase());
     const matchesVehicle = isBlockMode || !editForm.type || s.vehicle === editForm.type;
@@ -137,17 +220,24 @@ export function EditLessonModal({
           </div>
         )}
 
+        {/* --- MODE SWITCHER --- */}
         <div className="flex p-1 bg-midnight border border-gray-800 rounded-lg">
            <button 
              onClick={() => {
-                const originalWasLesson = editingSlot?.status === 'Booked' || !editingSlot?.status;
-                setEditForm({ 
-                    ...editForm, 
-                    status: 'Booked', 
-                    type: originalWasLesson ? (editingSlot?.type || '1a') : '1a',
-                    studentId: editingSlot?.studentId || '',
-                    customDuration: editingSlot?.customDuration || undefined
-                });
+                // RESTORE LESSON SNAPSHOT
+                if (lessonSnapshot) {
+                    const safeStatus = lessonSnapshot.studentId ? 'Booked' : 'Open';
+                    setEditForm({
+                        ...lessonSnapshot,
+                        status: safeStatus,
+                        type: lessonSnapshot.type || primaryVehicle,
+                        
+                        // FIX: Carry over date/time from current view so they don't get lost
+                        date: editForm.date,
+                        time: editForm.time,
+                        location: editForm.location 
+                    });
+                }
              }}
              className={`flex-1 py-2 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-2 ${!isBlockMode ? 'bg-orange text-white shadow-md' : 'text-textGrey hover:text-white'}`}
            >
@@ -156,15 +246,17 @@ export function EditLessonModal({
            
            <button 
              onClick={() => {
-                setEditForm({ 
-                    ...editForm, 
-                    status: 'Blocked', 
-                    studentId: '', 
-                    type: (editingSlot?.status === 'Blocked' && editingSlot?.type) ? editingSlot.type : '',
-                    customDuration: (editingSlot?.status === 'Blocked' && editingSlot?.customDuration) 
-                        ? editingSlot.customDuration 
-                        : 60 
-                });
+                // RESTORE BLOCK SNAPSHOT
+                if (blockSnapshot) {
+                    setEditForm({
+                        ...blockSnapshot,
+                        
+                        // FIX: Carry over date/time from current view so they don't get lost
+                        date: editForm.date,
+                        time: editForm.time,
+                        location: editForm.location 
+                    });
+                }
              }}
              className={`flex-1 py-2 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-2 ${isBlockMode ? 'bg-statusRed text-white shadow-md' : 'text-textGrey hover:text-white'}`}
            >
@@ -176,15 +268,18 @@ export function EditLessonModal({
             <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
                <label className="text-[10px] text-textGrey uppercase font-black px-1">Vehicle Category</label>
                <div className="flex flex-wrap gap-2">
-                  {/* Filter and Map Objects */}
                   {VEHICLE_TYPES.filter(vObj => vehicleTypes.includes(vObj.id)).map(v => {
                       const label = v.label.replace('Private Car', 'Car').replace('Light Goods', 'Van');
+                      const isSelected = effectiveType === v.id;
+
                       return (
                         <button
                           key={v.id}
-                          onClick={() => handleChange('type', v.id)}
+                          onClick={() => {
+                              handleChange('type', v.id);
+                          }}
                           className={`px-3 py-1.5 rounded-md text-xs font-bold border transition-all ${
-                             editForm.type === v.id
+                             isSelected
                                ? 'bg-orange text-white border-orange'
                                : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'
                           }`}
@@ -263,7 +358,6 @@ export function EditLessonModal({
                     <label className="text-[10px] text-textGrey uppercase font-black px-1">Reason</label>
                     
                     <div className="flex flex-wrap gap-2 mb-2">
-                        {/* Map Block Reasons by ID */}
                         {BLOCK_REASONS.map(reason => (
                             <button
                                 key={reason.id}
@@ -290,10 +384,11 @@ export function EditLessonModal({
             </div>
         ) : (
             <>
+                {/* UPDATED: ALWAYS VISIBLE */}
                 <div className="flex items-center justify-between bg-midnight border border-gray-800 p-4 rounded-xl cursor-pointer" onClick={() => handleChange('isDouble', !editForm.isDouble)}>
                     <div className="flex flex-col">
                         <span className="text-sm font-bold text-white">
-                          {editForm.isDouble ? 'Double Session' : 'Single Session'}
+                        {editForm.isDouble ? 'Double Session' : 'Single Session'}
                         </span>
                         <span className="text-xs text-textGrey">
                             <span className="text-white font-medium">{currentDuration} min</span> 
@@ -349,7 +444,6 @@ export function EditLessonModal({
                                 >
                                   <span className="font-bold text-white text-sm">{student.name}</span>
                                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-textGrey">
-                                      {/* Just ID is shown here, might want to find label if critical, but simplified for now */}
                                       {student.vehicle} 
                                   </span>
                                 </div>
@@ -392,7 +486,7 @@ export function EditLessonModal({
                                         className="p-3 hover:bg-midnight cursor-pointer transition-colors border-b border-gray-800 last:border-0"
                                         onMouseDown={(e) => e.preventDefault()}
                                         onClick={() => {
-                                            handleChange('location', loc.label); // Save LABEL for locations
+                                            handleChange('location', loc.label); 
                                             setShowLocationDropdown(false);
                                         }}
                                     >
@@ -410,7 +504,7 @@ export function EditLessonModal({
                       <button 
                         key={loc.id}
                         type="button" 
-                        onClick={() => handleChange('location', loc.label)} // Save LABEL
+                        onClick={() => handleChange('location', loc.label)}
                         className={`px-3 py-1.5 rounded-md text-xs font-bold border transition-all ${
                           editForm.location === loc.label 
                             ? 'bg-orange text-white border-orange' 
