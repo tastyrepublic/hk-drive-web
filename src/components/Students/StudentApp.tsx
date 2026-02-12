@@ -1,20 +1,23 @@
-import { useState, useEffect, useRef } from 'react';
-import { db, auth } from '../../firebase';
-import { collection, query, where, onSnapshot, doc } from 'firebase/firestore'; 
+import { useState, useRef, useEffect } from 'react';
 import { signOut } from 'firebase/auth';
+import { auth } from '../../firebase';
 import { 
-  Car, Loader2, ArrowLeft, ChevronDown, 
-  Menu, LogOut, Sun, Moon, User, X 
+  Loader2, ArrowLeft, ChevronDown, 
+  Menu, LogOut, Sun, Moon, User, X, Car
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// IMPORT SUB-VIEWS
+import { useStudentData } from '../../hooks/useStudentData';
+
+// Sub-Views
 import { DashboardView } from './DashboardView';
 import { ProfileView } from './ProfileView';
 import { ScheduleView } from './ScheduleView';
 import { PackagesView } from './PackagesView';
 
-// --- CHANGE 1: Import Helper ---
+// Components
+import { ConfirmModal } from '../Modals/ConfirmModal'; // [NEW IMPORT]
+
 import { getVehicleLabel } from '../../constants/list';
 
 interface Props {
@@ -26,83 +29,30 @@ interface Props {
 type View = 'dashboard' | 'profile' | 'schedule' | 'packages'; 
 
 export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
-  const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState<View>('dashboard');
   
-  // Data State
-  const [userProfile, setUserProfile] = useState<any>(null); 
-  const [profiles, setProfiles] = useState<any[]>([]); 
-  const [activeProfile, setActiveProfile] = useState<any>(null); 
-  const [instructors, setInstructors] = useState<Record<string, any>>({}); 
-  const [lessons, setLessons] = useState<any[]>([]); 
+  const { 
+    loading, 
+    actionLoading, // [NEW]
+    userProfile, 
+    profiles, 
+    activeProfile, 
+    setActiveProfile, 
+    instructors, 
+    lessons, 
+    nextLesson, 
+    cancelLesson 
+  } = useStudentData();
+
+  // --- CONFIRM MODAL STATE ---
+  const [confirmDialog, setConfirmDialog] = useState<{ isOpen: boolean; title: string; msg: string; lessonId?: string } | null>(null);
 
   // Menu States
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  
   const profileMenuRef = useRef<HTMLDivElement>(null); 
   const profileButtonRef = useRef<HTMLButtonElement>(null);
 
-  const pageVariants = {
-    initial: { opacity: 0, scale: 0.98, y: 10 },
-    animate: { opacity: 1, scale: 1, y: 0 },
-    exit: { opacity: 0, scale: 1.02, y: -10 },
-  };
-
-  // 1. Initial Load Logic
-  useEffect(() => {
-    if (!auth.currentUser) return;
-    const uid = auth.currentUser.uid;
-
-    // A. Real-time User Profile
-    const unsubUser = onSnapshot(doc(db, "users", uid), (snap) => {
-        if (snap.exists()) setUserProfile(snap.data());
-    });
-
-    // B. Real-time Student Profiles
-    const q = query(collection(db, "students"), where("uid", "==", uid));
-    const unsubStudents = onSnapshot(q, (snapshot) => {
-      const loadedProfiles = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      setProfiles(loadedProfiles);
-      if (loadedProfiles.length > 0 && !activeProfile) {
-        setActiveProfile(loadedProfiles[0]);
-      }
-      setLoading(false);
-    });
-
-    return () => {
-        unsubUser();
-        unsubStudents();
-    };
-  }, []);
-
-  // 2. Fetch Instructor details
-  useEffect(() => {
-    if (profiles.length === 0) return;
-    const teacherIds = [...new Set(profiles.map(p => p.teacherId))].filter(Boolean);
-    const unsubs = teacherIds.map(id => 
-      onSnapshot(doc(db, "instructors", id), (snap) => {
-        if (snap.exists()) {
-          setInstructors(prev => ({ ...prev, [id]: { id: snap.id, ...snap.data() } }));
-        }
-      })
-    );
-    return () => unsubs.forEach(fn => fn());
-  }, [profiles]);
-
-  // 3. Fetch Lessons
-  useEffect(() => {
-    if (!activeProfile) return;
-    const q = query(collection(db, "slots"), where("studentId", "==", activeProfile.id));
-    const unsub = onSnapshot(q, (snap) => {
-        const loadedLessons = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        loadedLessons.sort((a: any, b: any) => (a.date + a.time).localeCompare(b.date + b.time));
-        setLessons(loadedLessons);
-    });
-    return () => unsub();
-  }, [activeProfile]);
-
-  // 4. Handle Outside Clicks
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent | TouchEvent) => {
       const target = event.target as Node;
@@ -118,11 +68,29 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
     };
   }, [isProfileMenuOpen]);
 
-  const upcomingLessons = lessons.filter(l => {
-    const lessonDate = new Date(l.date + 'T' + l.time);
-    return lessonDate >= new Date() || l.status === 'Booked';
-  }); 
-  const nextLesson = upcomingLessons.length > 0 ? upcomingLessons[0] : null;
+  // --- HANDLERS ---
+  const handleCancelClick = (lessonId: string) => {
+      setConfirmDialog({
+          isOpen: true,
+          title: "Cancel Lesson",
+          msg: "Are you sure you want to cancel this lesson? 1 Credit will be refunded to your balance.",
+          lessonId
+      });
+  };
+
+  const executeCancel = async () => {
+      if (confirmDialog?.lessonId) {
+          await cancelLesson(confirmDialog.lessonId, () => {
+              setConfirmDialog(null); // Close modal on success
+          });
+      }
+  };
+
+  const pageVariants = {
+    initial: { opacity: 0, scale: 0.98, y: 10 },
+    animate: { opacity: 1, scale: 1, y: 0 },
+    exit: { opacity: 0, scale: 1.02, y: -10 },
+  };
 
   const isDark = theme === 'dark';
   const bgColor = isDark ? 'bg-midnight' : 'bg-gray-100';
@@ -138,6 +106,16 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
   return (
     <div data-portal="student" className={`min-h-screen pb-20 ${bgColor} ${textColor} font-sans transition-colors duration-300 overflow-x-hidden`}>
         
+        {/* CONFIRM MODAL */}
+        <ConfirmModal 
+            isOpen={!!confirmDialog?.isOpen}
+            title={confirmDialog?.title || ''}
+            msg={confirmDialog?.msg || ''}
+            isLoading={actionLoading}
+            onConfirm={executeCancel}
+            onCancel={() => setConfirmDialog(null)}
+        />
+
         {/* HEADER */}
         <header className={`sticky top-0 z-[60] border-b shadow-sm w-full ${isDark ? 'bg-header border-gray-800' : 'bg-white/90 border-gray-200 backdrop-blur-md'}`}>
             <div className="max-w-4xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
@@ -194,7 +172,6 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
                                                           <div className={`space-y-1 transition-transform duration-200 ${isActive ? 'translate-x-1' : ''}`}>
                                                               <div className={`text-sm font-black tracking-tight ${isActive ? 'text-primary' : textColor}`}>{inst?.name || 'Instructor'}</div>
                                                               <div className="text-[10px] uppercase tracking-wider font-bold flex flex-col gap-0.5">
-                                                                  {/* CHANGE 2: Use helper */}
                                                                   <span className={`flex items-center gap-1 ${isActive ? 'text-primary/90' : 'opacity-50'}`}><Car size={10} /> {getVehicleLabel(p.vehicle) || 'Standard'}</span>
                                                                   <span className={`${isActive ? 'text-primary font-black scale-105 origin-left' : 'opacity-40'} transition-transform`}>{p.balance} Credits Available</span>
                                                               </div>
@@ -212,9 +189,8 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
                     </AnimatePresence>
                 </div>
 
-                {/* RIGHT: RESPONSIVE ACTIONS (Same as before) */}
+                {/* RIGHT: ACTIONS */}
                 <div className="flex items-center justify-end gap-1 sm:gap-2 w-auto md:w-auto flex-shrink-0 relative">
-                    {/* ... (Existing Menu Logic) ... */}
                     <div className={`flex items-center gap-2 transition-all duration-500 ease-in-out ${"absolute opacity-0 scale-90 pointer-events-none md:static md:opacity-100 md:scale-100 md:pointer-events-auto"}`}>
                         <button onClick={() => setCurrentView('profile')} className={`p-1.5 sm:p-2 rounded-lg transition-colors ${currentView === 'profile' ? 'text-primary bg-primary/10' : 'text-textGrey hover:text-white hover:bg-white/10'}`}><User size={18} /></button>
                         <button onClick={toggleTheme} className="p-1.5 sm:p-2 rounded-lg text-textGrey hover:text-white hover:bg-white/10 transition-colors">{theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}</button>
@@ -257,6 +233,7 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
                           lessons={lessons} 
                           theme={theme}
                           setCurrentView={setCurrentView}
+                          onCancelLesson={handleCancelClick} // [UPDATED] Pass the modal trigger
                         />
                     )}
 
@@ -273,6 +250,7 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
                     {currentView === 'schedule' && (
                         <ScheduleView 
                           instructorName={instructors[activeProfile?.teacherId]?.name || 'Instructor'} 
+                          studentProfile={activeProfile} 
                           isDark={isDark} 
                         />
                     )}
