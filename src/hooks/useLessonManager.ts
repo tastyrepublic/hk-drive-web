@@ -13,7 +13,8 @@ interface LessonForm {
   endTime?: string;
   isDouble?: boolean; 
   status?: 'Booked' | 'Blocked' | 'Open'; 
-  customDuration?: number;       
+  customDuration?: number; 
+  examCenter?: string; // [FIX 1] Added interface field
 }
 
 export function useLessonManager(user: any, slots: any[], profile: any) {
@@ -63,6 +64,13 @@ export function useLessonManager(user: any, slots: any[], profile: any) {
              setSaveLoading(false);
              return;
           }
+          // Note: Exam Center is validated in the UI (Save button disabled), so we can skip strict check here if desired,
+          // or add it for double safety:
+          if (!form.examCenter) {
+             setValidationMsg("Please select an Exam Center!");
+             setSaveLoading(false);
+             return;
+          }
       }
 
       // FIX: Require Reason (Type) for Blocks
@@ -88,7 +96,7 @@ export function useLessonManager(user: any, slots: any[], profile: any) {
       } else if (form.studentId && form.studentId !== 'Unknown' && form.studentId !== '') {
           finalStatus = 'Booked';
       } else {
-          finalStatus = 'Open'; // Explicitly set Open if it's a lesson with no student
+          finalStatus = 'Open'; 
       }
 
       // --- 5. PREPARE DATA ---
@@ -100,13 +108,14 @@ export function useLessonManager(user: any, slots: any[], profile: any) {
         studentId: form.studentId || '', 
         isDouble: !!form.isDouble,
         
-        // FIX: Removed fallback to 'Private Car'. 
-        // We trust the form because of the validation in Step 3.
         type: form.type, 
         
         status: finalStatus, 
         customDuration: form.customDuration || null,
         duration: finalDuration, 
+
+        // [FIX 2] Save the Exam Center to Firestore
+        examCenter: form.examCenter || '' 
       };
 
       // --- 6. DATABASE OPERATION ---

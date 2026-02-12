@@ -41,6 +41,7 @@ interface LessonForm {
   isDouble?: boolean;
   status?: 'Booked' | 'Blocked' | 'Open';
   customDuration?: number;
+  examCenter?: string; // [FIX 1] Added interface field
 }
 
 interface Props {
@@ -90,7 +91,8 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
       date: '', 
       time: '', 
       location: '', 
-      type: DEFAULT_VEHICLE_ID 
+      type: DEFAULT_VEHICLE_ID,
+      examCenter: '' // [FIX 2] Init field
   });
 
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
@@ -126,7 +128,7 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
       setStudents(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    // 3. Profile Fetch & FORM INITIALIZATION
+    // 3. Profile Fetch
     getDoc(doc(db, "instructors", user.uid)).then(snap => {
       if (snap.exists()) { 
         const data = snap.data();
@@ -176,15 +178,14 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
             type: slot.type || '', 
             isDouble: slot.isDouble || false, 
             status: slot.status || 'Booked',
-            customDuration: slot.customDuration || undefined 
+            customDuration: slot.customDuration || undefined,
+            examCenter: slot.examCenter || '' // [FIX 3] LOAD EXAM CENTER
         });
     } else {
         // --- B. CREATING NEW SLOT ---
         
-        // CHECK: Is this a "Grid Click" (has date) or "Add Button" (no date)?
         if (!slot.date) {
             // >>> FRESH START (Add Button) <<<
-            // FIX: Set date and time to empty strings so user must select them
             setEditForm({
                 date: '', 
                 time: '',
@@ -193,7 +194,8 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
                 studentId: '',
                 isDouble: profile.defaultDoubleLesson ?? false,
                 status: 'Booked',
-                customDuration: undefined
+                customDuration: undefined,
+                examCenter: '' // [FIX 4] Reset
             });
         } else {
             // >>> STICKY START (Grid Click) <<<
@@ -201,18 +203,14 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
                 ...prev, 
                 id: undefined,
                 studentId: '',
-                
-                // Enforce clicked date/time
                 date: slot.date,
                 time: slot.time,
-                
-                // Keep sticky location/type if available
                 location: '',
                 type: preferredVehicle,
-                
                 isDouble: profile.defaultDoubleLesson ?? false,
                 status: 'Booked',
-                customDuration: undefined
+                customDuration: undefined,
+                examCenter: '' // [FIX 5] Reset
             }));
         }
     }
@@ -220,13 +218,27 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
   
   // Logic checks
   const isBlockMode = editForm.status === 'Blocked';
-  const isFormValid = isBlockMode ? (!!editForm.date && !!editForm.time && !!editForm.type) : (!!editForm.date && !!editForm.time && !!editForm.location && !!editForm.type); 
-  const hasChanges = !editingSlot?.id ? true : ( editForm.date !== editingSlot.date || editForm.time !== editingSlot.time || (editForm.location || '') !== (editingSlot.location || '') || (editForm.studentId || '') !== (editingSlot.studentId || '') || (editForm.type || '') !== (editingSlot.type || '') || (editForm.status || 'Booked') !== (editingSlot.status || 'Booked') || (!!editForm.isDouble) !== (!!editingSlot.isDouble) || (editForm.customDuration || 0) !== (editingSlot.customDuration || 0));
+  // [FIX 6] Updated isFormValid to include examCenter check for lessons
+  const isFormValid = isBlockMode 
+    ? (!!editForm.date && !!editForm.time && !!editForm.type) 
+    : (!!editForm.date && !!editForm.time && !!editForm.location && !!editForm.type && !!editForm.examCenter); 
+
+  const hasChanges = !editingSlot?.id ? true : ( 
+      editForm.date !== editingSlot.date || 
+      editForm.time !== editingSlot.time || 
+      (editForm.location || '') !== (editingSlot.location || '') || 
+      (editForm.studentId || '') !== (editingSlot.studentId || '') || 
+      (editForm.type || '') !== (editingSlot.type || '') || 
+      (editForm.status || 'Booked') !== (editingSlot.status || 'Booked') || 
+      (!!editForm.isDouble) !== (!!editingSlot.isDouble) || 
+      (editForm.customDuration || 0) !== (editingSlot.customDuration || 0) ||
+      (editForm.examCenter || '') !== (editingSlot.examCenter || '') // [FIX 7] Check changes
+  );
+
   const isSlotModified = isFormValid && hasChanges;
   const isStudentModified = isEditingStudent ? JSON.stringify(studentForm) !== JSON.stringify(originalStudent) : (studentForm.name.trim() !== '' && studentForm.phone.trim() !== '');
 
   // --- ACTIONS ---
-  
   const saveSlotEdit = async () => { 
     await saveLesson(
       editForm, 
@@ -239,8 +251,8 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
             ? profile.vehicleTypes[0] 
             : DEFAULT_VEHICLE_ID;
 
-        // Reset form to defaults after save
-        setEditForm({ date: '', time: '', location: '', type: preferredVehicle }); 
+        // [FIX 8] Reset form to include empty examCenter
+        setEditForm({ date: '', time: '', location: '', type: preferredVehicle, examCenter: '' }); 
         showToast(successMsg, 'success'); 
       }, 
       (errorMsg: string) => showToast(errorMsg, 'error')
@@ -442,7 +454,6 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
       </main>
 
       {/* MODALS */}
-      {/* UPDATED: Passing defaultDoubleLesson prop */}
       <EditLessonModal 
         editingSlot={editingSlot} editForm={editForm} setEditForm={setEditForm} setEditingSlot={handleSetEditingSlot} 
         validationMsg={validationMsg} setValidationMsg={setValidationMsg} saveSlotLoading={saveSlotLoading} 

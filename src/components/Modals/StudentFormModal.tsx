@@ -6,6 +6,7 @@ import {
   User, Phone, Car, MapPin, 
   Route as RouteIcon 
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion'; //
 import { Modal } from './Modal'; 
 import { ConfirmModal } from './ConfirmModal';
 
@@ -16,7 +17,10 @@ import {
   EXAM_ROUTES, 
   getVehicleLabel, 
   getExamCenterLabel 
-} from '../../constants/list'; 
+} from '../../constants/list';
+
+// Import the new global animations
+import { ERROR_ALERT_VARIANTS, smoothScrollTo } from '../../constants/animations'; 
 
 interface Props {
   isOpen: boolean;
@@ -49,6 +53,9 @@ export function StudentFormModal({
   const [inviteStatus, setInviteStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle');
   const resetTimerRef = useRef<any>(null);
+  
+  // Ref for the error message container
+  const errorRef = useRef<HTMLDivElement>(null);
 
   const [cancelLoading, setCancelLoading] = useState(false);
   const [unlinkLoading, setUnlinkLoading] = useState(false);
@@ -86,6 +93,13 @@ export function StudentFormModal({
         if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
     };
   }, [isOpen, isEditing]);
+
+  // --- NEW: Scroll to error when it appears ---
+  useEffect(() => {
+    if (studentError) {
+        smoothScrollTo(errorRef);
+    }
+  }, [studentError]);
 
   // Close Dropdowns on Click Outside
   useEffect(() => {
@@ -212,7 +226,7 @@ export function StudentFormModal({
       });
   };
 
-  const inputBase = "w-full p-3 rounded-lg text-white transition-all outline-none pl-10"; // Added pl-10 globally
+  const inputBase = "w-full p-3 rounded-lg text-white transition-all outline-none pl-10"; 
   const inputView = "bg-transparent border border-transparent font-bold opacity-100 cursor-default";
   const inputEdit = "bg-midnight border border-gray-800 focus:border-orange";
 
@@ -287,18 +301,28 @@ export function StudentFormModal({
                 </button>
             )}
 
-            {studentError && (
-                <div className="bg-statusRed/20 border border-statusRed/50 text-statusRed p-3 rounded-lg flex items-center gap-2 text-sm font-bold">
-                    <AlertTriangle size={16} /> {studentError}
-                </div>
-            )}
+            {/* ANIMATED ERROR MESSAGE WITH SCROLL REF */}
+            <AnimatePresence>
+                {studentError && (
+                    <motion.div 
+                        ref={errorRef}
+                        variants={ERROR_ALERT_VARIANTS}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        className="bg-statusRed/20 border border-statusRed/50 text-statusRed p-3 rounded-lg flex items-center gap-2 text-sm font-bold overflow-hidden"
+                    >
+                        <AlertTriangle size={16} className="shrink-0" /> 
+                        <span>{studentError}</span>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* FORM */}
             <div className="space-y-4">
                 <div className="space-y-1">
                     <label className="text-[10px] text-textGrey uppercase font-black px-1">Full Name</label>
                     <div className="relative">
-                        {/* Always show User Icon */}
                         <User className="absolute left-3 top-3 text-textGrey" size={18} />
                         <input 
                             type="text" 
@@ -321,7 +345,6 @@ export function StudentFormModal({
                     </div>
                     
                     <div className="relative">
-                        {/* Always show Phone Icon */}
                         <Phone className="absolute left-3 top-3 text-textGrey" size={18} />
                         <input 
                             type="text" 
@@ -348,14 +371,15 @@ export function StudentFormModal({
                     )}
                 </div>
 
+                {/* ... Rest of the form inputs (Vehicle, Exam Center) ... */}
+                {/* (I am keeping the rest of your form logic identical, just hiding it for brevity in this response block, 
+                    but in your actual file, you keep the code below exactly as it was) */}
                 <div className="grid grid-cols-2 gap-4">
-                    
                     {/* CUSTOM VEHICLE DROPDOWN */}
                     <div className="space-y-1" ref={vehicleRef}>
                         <label className="text-[10px] text-textGrey uppercase font-black px-1">Vehicle</label>
                         <div className="relative">
                             {isLocked ? (
-                                // Locked View with Icon
                                 <div className="relative">
                                     <Car className="absolute left-3 top-3 text-textGrey" size={18} />
                                     <div className={`${inputBase} ${inputView} flex items-center h-[46px]`}>
@@ -408,7 +432,6 @@ export function StudentFormModal({
                         <label className="text-[10px] text-textGrey uppercase font-black px-1">Exam Center</label>
                         <div className="relative">
                             {isLocked ? (
-                                // Locked View with Icon
                                 <div className="relative">
                                     <MapPin className="absolute left-3 top-3 text-textGrey" size={18} />
                                     <div className={`${inputBase} ${inputView} flex items-center h-[46px]`}>
@@ -474,11 +497,11 @@ export function StudentFormModal({
                     </div>
                 </div>
             </div>
-
-            {/* --- NEW SECTION: EXAM ROUTES DISPLAY (Only in Locked Mode) --- */}
+            
+            {/* The rest of your sections (Exam Routes Display, Connection Section) remain unchanged */}
             {isLocked && studentForm.examRoute && studentForm.examRoute !== 'Not Assigned' && relevantRoutes.length > 0 && (
                 <div className="mt-4 pt-4 border-t border-gray-800/50 animate-in fade-in slide-in-from-top-1">
-                    <label className="text-[10px] text-textGrey uppercase font-black px-1 mb-2 flex items-center gap-1">
+                     <label className="text-[10px] text-textGrey uppercase font-black px-1 mb-2 flex items-center gap-1">
                         <RouteIcon size={12} /> Available Routes
                     </label>
                     
@@ -497,7 +520,6 @@ export function StudentFormModal({
                 </div>
             )}
 
-            {/* --- CONNECTION SECTION --- */}
             {isEditing && studentForm.id && isLocked && (
                 <div className="mt-6 pt-6 border-t border-gray-800/50 animate-in fade-in slide-in-from-top-2 duration-300">
                     <div className="flex items-center justify-between mb-4 px-1">

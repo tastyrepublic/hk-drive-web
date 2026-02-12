@@ -1,7 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Sparkles, AlertCircle } from 'lucide-react';
 import { motion, useMotionValue, useTransform, animate, AnimatePresence } from 'framer-motion';
 import { DiaryCard } from './DiaryCard';
+
+// --- IMPORT CONSTANTS ---
+import { RESTRICTED_HOURS } from '../../constants/list';
 
 // --- IMPORT SCHEDULER UTILITIES ---
 import { getSmartStartTime } from '../../scheduler';
@@ -15,6 +18,7 @@ interface Props {
 const HOURS = Array.from({ length: 18 }, (_, i) => i + 6);
 const CELL_HEIGHT = 110; 
 const CONTENT_HEIGHT = HOURS.length * CELL_HEIGHT; 
+const START_HOUR = 6; // Grid starts at 6am
 
 // --- ANIMATION CONFIG ---
 const slideVariants = {
@@ -40,6 +44,13 @@ const slideVariants = {
 const swipeTransition = {
   x: { type: "tween" as const, ease: "easeOut" as const, duration: 0.25 },
   opacity: { duration: 0.2 }
+};
+
+// --- HELPER: Parse "HH:MM" to Pixels ---
+const timeToPixels = (timeStr: string) => {
+    const [h, m] = timeStr.split(':').map(Number);
+    const totalMinutesFromStart = (h - START_HOUR) * 60 + m;
+    return (totalMinutesFromStart / 60) * CELL_HEIGHT;
 };
 
 export function DiaryView({ slots, setEditingSlot, lessonDuration }: Props) {
@@ -281,9 +292,46 @@ export function DiaryView({ slots, setEditingSlot, lessonDuration }: Props) {
                         const dateString = day.toISOString().split('T')[0];
                         const daySlots = slots.filter(s => s.date === dateString);
 
+                        // --- [NEW] CALCULATE RESTRICTED ZONES FOR THIS DAY ---
+                        const dayOfWeek = day.getDay(); // 0=Sun, 6=Sat
+                        const restrictedZones = RESTRICTED_HOURS
+                            .filter(r => r.days.includes(dayOfWeek))
+                            .map(r => {
+                                const top = timeToPixels(r.start);
+                                const height = timeToPixels(r.end) - top;
+                                return { top, height, label: r.label };
+                            });
+
                         return (
                             <div key={dayIdx} className="flex-1 border-r border-gray-800 last:border-r-0 relative h-full bg-slate transition-colors duration-300">
                             
+                            {/* [NEW] RESTRICTED ZONES VISUALIZATION */}
+                            {restrictedZones.map((zone, idx) => (
+                                <div 
+                                    key={`rest-${idx}`}
+                                    className="absolute left-0 right-0 z-0 pointer-events-none overflow-hidden"
+                                    style={{ 
+                                        top: zone.top, 
+                                        height: zone.height,
+                                        // Striped background pattern
+                                        background: `repeating-linear-gradient(
+                                            45deg,
+                                            rgba(239, 68, 68, 0.03),
+                                            rgba(239, 68, 68, 0.03) 10px,
+                                            rgba(239, 68, 68, 0.08) 10px,
+                                            rgba(239, 68, 68, 0.08) 20px
+                                        )`
+                                    }}
+                                >
+                                    {/* Optional Label */}
+                                    <div className="absolute top-2 right-1 opacity-40">
+                                        <div className="flex items-center gap-1 bg-red-500/10 px-1.5 py-0.5 rounded text-[8px] font-bold text-red-400 uppercase tracking-tighter border border-red-500/20">
+                                            <AlertCircle size={8} /> {zone.label}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+
                             {HOURS.map((h, idx) => {
                               return (
                                 <div 

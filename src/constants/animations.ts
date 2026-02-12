@@ -48,3 +48,25 @@ export const LIST_CONTAINER: Variants = {
     },
   },
 };
+
+/**
+ * ERROR_ALERT_VARIANTS: Pop-in animation for validation errors
+ */
+export const ERROR_ALERT_VARIANTS: Variants = {
+  initial: { opacity: 0, y: -10, height: 0, scale: 0.95 },
+  animate: { opacity: 1, y: 0, height: "auto", scale: 1 },
+  exit: { opacity: 0, y: -10, height: 0, scale: 0.95 }
+};
+
+/**
+ * GLOBAL HELPER: Smoothly scrolls to a specific element.
+ * Usage: Call this inside a useEffect when an error appears.
+ */
+export const smoothScrollTo = (ref: any) => {
+  if (ref && ref.current) {
+    // Small timeout ensures the DOM has expanded before scrolling
+    setTimeout(() => {
+        ref.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  }
+};
