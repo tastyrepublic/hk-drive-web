@@ -14,7 +14,7 @@ interface LessonForm {
   isDouble?: boolean; 
   status?: 'Booked' | 'Blocked' | 'Open'; 
   customDuration?: number; 
-  examCenter?: string; // [FIX 1] Added interface field
+  examCenter?: string; 
 }
 
 export function useLessonManager(user: any, slots: any[], profile: any) {
@@ -35,7 +35,6 @@ export function useLessonManager(user: any, slots: any[], profile: any) {
     try {
       // --- 1. CALCULATE "FROZEN" DURATION ---
       let finalDuration = 0;
-      
       const isBlockMode = form.status === 'Blocked';
 
       if (isBlockMode) {
@@ -48,11 +47,10 @@ export function useLessonManager(user: any, slots: any[], profile: any) {
       // --- 2. CALCULATE END TIME ---
       const [h, m] = form.time.split(':').map(Number);
       const totalMins = h * 60 + m + finalDuration;
+      // [NOTE] This `newEndTime` is critical for your "Happening Now" logic
       const newEndTime = `${Math.floor(totalMins / 60).toString().padStart(2, '0')}:${(totalMins % 60).toString().padStart(2, '0')}`;
 
       // --- 3. VALIDATION ---
-      
-      // FIX: Require Location & Vehicle for Lessons
       if (!isBlockMode) {
           if (!form.location) {
              setValidationMsg("Please select a location!");
@@ -64,8 +62,6 @@ export function useLessonManager(user: any, slots: any[], profile: any) {
              setSaveLoading(false);
              return;
           }
-          // Note: Exam Center is validated in the UI (Save button disabled), so we can skip strict check here if desired,
-          // or add it for double safety:
           if (!form.examCenter) {
              setValidationMsg("Please select an Exam Center!");
              setSaveLoading(false);
@@ -73,14 +69,12 @@ export function useLessonManager(user: any, slots: any[], profile: any) {
           }
       }
 
-      // FIX: Require Reason (Type) for Blocks
       if (isBlockMode && !form.type) {
          setValidationMsg("Please select or type a reason!");
          setSaveLoading(false);
          return;
       }
 
-      // Check for overlapping slots
       const check = checkSlotValidity(form.date, form.time, finalDuration, slots, editingSlot?.id || null);
       if (!check.valid) {
         setValidationMsg(check.error || "Time slot overlap!");
@@ -88,33 +82,39 @@ export function useLessonManager(user: any, slots: any[], profile: any) {
         return; 
       }
 
-      // --- 4. DETERMINE CORRECT STATUS ---
+      // --- 4. DETERMINE STATUS & BOOKED BY ---
       let finalStatus = 'Open'; 
+      // [NEW] Determine who booked it. If status is Open, nobody booked it.
+      // If it is Blocked or Booked via this manager (Teacher Portal), it is 'teacher'.
+      let bookedBy = null; 
 
       if (isBlockMode) {
           finalStatus = 'Blocked';
+          bookedBy = 'teacher';
       } else if (form.studentId && form.studentId !== 'Unknown' && form.studentId !== '') {
           finalStatus = 'Booked';
+          bookedBy = 'teacher'; // Teacher manually assigned a student
       } else {
           finalStatus = 'Open'; 
+          bookedBy = null;
       }
 
       // --- 5. PREPARE DATA ---
       const lessonData = {
         date: form.date,
         time: form.time,
-        endTime: newEndTime,
+        endTime: newEndTime, // Saved for exact duration calc
         location: form.location || '', 
         studentId: form.studentId || '', 
         isDouble: !!form.isDouble,
         
         type: form.type, 
         
-        status: finalStatus, 
+        status: finalStatus,
+        bookedBy: bookedBy, // [NEW] Save source
+        
         customDuration: form.customDuration || null,
         duration: finalDuration, 
-
-        // [FIX 2] Save the Exam Center to Firestore
         examCenter: form.examCenter || '' 
       };
 

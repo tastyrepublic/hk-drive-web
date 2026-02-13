@@ -1,9 +1,7 @@
-import { Edit2, User, CheckCircle2, Ban } from 'lucide-react';
+import { Edit2, User, CheckCircle2, Ban, Smartphone } from 'lucide-react'; // Added Smartphone icon
 
-// FIX: Match this with DiaryView.tsx
 const CELL_HEIGHT = 110; 
 
-// UPDATED: Removed 'setEditForm' from props
 export function DiaryCard({ slot, setEditingSlot, isAbsolute }: any) {
   if (!isAbsolute) return null;
 
@@ -11,22 +9,22 @@ export function DiaryCard({ slot, setEditingSlot, isAbsolute }: any) {
   const [hours, minutes] = slot.time.split(':').map(Number);
   const startY = (hours - 6) * CELL_HEIGHT + (minutes / 60) * CELL_HEIGHT;
   
-  // --- FIX 1: DURATION PRIORITY ---
   let durationMins = slot.duration;
   if (!durationMins) {
       const [endH, endM] = slot.endTime.split(':').map(Number);
       durationMins = (endH * 60 + endM) - (hours * 60 + minutes);
   }
   
-  // Subtract 2px for vertical gap
   const height = (durationMins / 60) * CELL_HEIGHT - 2;
 
   // 2. Determine Status
   const isBlocked = slot.status === 'Blocked';
   const hasStudent = slot.studentId && slot.studentId !== 'Unknown' && slot.studentId !== '';
   const isEffectiveBooked = !isBlocked && hasStudent;
+  
+  // [NEW] Check if self-booked
+  const isSelfBooked = slot.bookedBy === 'student';
 
-  // --- FIX 2: VEHICLE BADGE LABEL ---
   const vehicleLabel = slot.type && !isBlocked 
     ? (slot.type.includes('1A') ? '1A' : slot.type.includes('2') ? '2' : slot.type.split(' ')[0])
     : null;
@@ -45,25 +43,32 @@ export function DiaryCard({ slot, setEditingSlot, isAbsolute }: any) {
       style={{ top: `${startY}px`, height: `${height}px` }}
       onClick={(e) => {
         e.stopPropagation();
-        // Just pass the slot. Dashboard handles form hydration now.
         setEditingSlot(slot);
       }}
     >
-      {/* Header: Time & Edit Icon */}
+      {/* Header: Time & Badges */}
       <div className="flex justify-between items-start mb-0.5 flex-shrink-0">
         <span className={`text-[10px] font-black leading-none ${isEffectiveBooked || isBlocked ? 'text-white/90' : 'text-inherit opacity-80'}`}>
           {slot.time} - {slot.endTime}
         </span>
         
-        {!isBlocked && vehicleLabel && (
-             <div className={`text-[8px] font-black px-1 rounded ${isEffectiveBooked ? 'bg-black/20 text-white' : 'bg-yellow-900/10 text-yellow-900'}`}>
-                {vehicleLabel}
-             </div>
-        )}
+        <div className="flex items-center gap-1">
+            {/* [NEW] Self-Booked Indicator */}
+            {isSelfBooked && isEffectiveBooked && (
+                <div className="bg-white/20 p-0.5 rounded" title="Student Booked via App">
+                    <Smartphone size={8} className="text-white" />
+                </div>
+            )}
 
-        {!vehicleLabel && (
-            <Edit2 size={10} className={isEffectiveBooked || isBlocked ? 'text-white/60' : 'text-inherit opacity-40'} />
-        )}
+            {!isBlocked && vehicleLabel && (
+                <div className={`text-[8px] font-black px-1 rounded ${isEffectiveBooked ? 'bg-black/20 text-white' : 'bg-yellow-900/10 text-yellow-900'}`}>
+                    {vehicleLabel}
+                </div>
+            )}
+            {!vehicleLabel && (
+                <Edit2 size={10} className={isEffectiveBooked || isBlocked ? 'text-white/60' : 'text-inherit opacity-40'} />
+            )}
+        </div>
       </div>
       
       {/* Body Content */}

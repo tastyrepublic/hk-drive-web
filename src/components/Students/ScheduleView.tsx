@@ -20,7 +20,6 @@ export function ScheduleView({ instructorName, studentProfile, isDark }: Props) 
   useEffect(() => {
     if (!studentProfile?.teacherId) return;
 
-    // Query: Get ALL 'Open' slots for this teacher
     const q = query(
         collection(db, "slots"), 
         where("teacherId", "==", studentProfile.teacherId),
@@ -30,17 +29,13 @@ export function ScheduleView({ instructorName, studentProfile, isDark }: Props) 
     const unsub = onSnapshot(q, (snapshot) => {
         const slots = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         
-        // --- FILTER LOGIC ---
-        // Only show slots that match the student's assigned exam route
         const myExamRoute = studentProfile.examRoute;
         
         const relevantSlots = slots.filter((slot: any) => {
-            // Strict matching: Slot must have the same Exam Center as Student's Route
             if (!myExamRoute || myExamRoute === 'Not Assigned') return false;
             return slot.examCenter === myExamRoute;
         });
 
-        // Sort by date/time
         relevantSlots.sort((a: any, b: any) => (a.date + a.time).localeCompare(b.date + b.time));
         
         setAvailableSlots(relevantSlots);
@@ -50,9 +45,9 @@ export function ScheduleView({ instructorName, studentProfile, isDark }: Props) 
     return () => unsub();
   }, [studentProfile]);
 
-  // --- BOOKING LOGIC (TRANSACTION) ---
+  // --- BOOKING LOGIC ---
   const handleBook = async (slot: any) => {
-      if (bookingId) return; // Prevent double clicks
+      if (bookingId) return; 
       
       const confirmMsg = `Confirm booking for ${slot.date} at ${slot.time}?\n1 Credit will be deducted.`;
       if (!window.confirm(confirmMsg)) return;
@@ -61,22 +56,17 @@ export function ScheduleView({ instructorName, studentProfile, isDark }: Props) 
 
       try {
           await runTransaction(db, async (transaction) => {
-              // 1. Get fresh Slot reference
               const slotRef = doc(db, "slots", slot.id);
-              const slotDoc = await transaction.get(slotRef);
-              
-              // 2. Get fresh Student reference
               const studentRef = doc(db, "students", studentProfile.id);
+
+              const slotDoc = await transaction.get(slotRef);
               const studentDoc = await transaction.get(studentRef);
 
-              if (!slotDoc.exists() || !studentDoc.exists()) {
-                  throw new Error("Document does not exist!");
-              }
+              if (!slotDoc.exists() || !studentDoc.exists()) throw new Error("Document does not exist!");
 
               const freshSlot = slotDoc.data();
               const freshStudent = studentDoc.data();
 
-              // 3. Validation
               if (freshSlot.status !== 'Open') {
                   throw new Error("Sorry, this slot was just taken!");
               }
@@ -85,10 +75,11 @@ export function ScheduleView({ instructorName, studentProfile, isDark }: Props) 
                   throw new Error("Insufficient balance! Please purchase a package.");
               }
 
-              // 4. Commit Updates
+              // [UPDATED] Set bookedBy to 'student'
               transaction.update(slotRef, {
                   status: 'Booked',
-                  studentId: studentProfile.id
+                  studentId: studentProfile.id,
+                  bookedBy: 'student' 
               });
 
               transaction.update(studentRef, {
@@ -105,7 +96,6 @@ export function ScheduleView({ instructorName, studentProfile, isDark }: Props) 
       }
   };
 
-  // Group slots by Date for display
   const groupedSlots = useMemo(() => {
       const groups: Record<string, any[]> = {};
       availableSlots.forEach(slot => {
@@ -118,7 +108,6 @@ export function ScheduleView({ instructorName, studentProfile, isDark }: Props) 
   const bgClass = isDark ? 'bg-white/5 border-gray-800' : 'bg-white border-gray-200';
   const textMuted = isDark ? 'text-gray-400' : 'text-gray-500';
 
-  // --- VIEW: NO EXAM ROUTE ---
   if (!studentProfile?.examRoute || studentProfile.examRoute === 'Not Assigned') {
       return (
         <div className={`p-8 rounded-3xl border-2 border-dashed flex flex-col items-center justify-center text-center gap-3 ${isDark ? 'border-gray-800 bg-white/5' : 'border-gray-200 bg-gray-50'}`}>
@@ -133,7 +122,6 @@ export function ScheduleView({ instructorName, studentProfile, isDark }: Props) 
       );
   }
 
-  // --- VIEW: MAIN SCHEDULE ---
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-1">
@@ -169,7 +157,6 @@ export function ScheduleView({ instructorName, studentProfile, isDark }: Props) 
                 
                 return (
                     <div key={date} className="space-y-3">
-                        {/* Date Header */}
                         <div className="flex items-center gap-3">
                             <div className={`h-[1px] flex-1 ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`} />
                             <div className={`text-xs font-bold uppercase tracking-wider ${textMuted}`}>
@@ -178,7 +165,6 @@ export function ScheduleView({ instructorName, studentProfile, isDark }: Props) 
                             <div className={`h-[1px] flex-1 ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`} />
                         </div>
 
-                        {/* Slots Grid */}
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                             {slots.map(slot => (
                                 <div 

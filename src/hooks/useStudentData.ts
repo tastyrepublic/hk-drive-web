@@ -4,16 +4,16 @@ import { collection, query, where, onSnapshot, doc, runTransaction } from 'fireb
 
 export function useStudentData() {
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false); // [NEW] Track transaction status
+  const [actionLoading, setActionLoading] = useState(false);
   
   // Data State
   const [userProfile, setUserProfile] = useState<any>(null); 
   const [profiles, setProfiles] = useState<any[]>([]); 
-  const [activeProfile, setActiveProfile] = useState<any>(null); 
+  const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [instructors, setInstructors] = useState<Record<string, any>>({}); 
   const [lessons, setLessons] = useState<any[]>([]); 
 
-  // 1. Initial Load (User & Profiles)
+  // 1. Initial Load
   useEffect(() => {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
@@ -26,14 +26,24 @@ export function useStudentData() {
     const unsubStudents = onSnapshot(q, (snapshot) => {
       const loadedProfiles = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       setProfiles(loadedProfiles);
-      if (loadedProfiles.length > 0) {
-        setActiveProfile((prev: any) => prev || loadedProfiles[0]);
-      }
       setLoading(false);
     });
 
     return () => { unsubUser(); unsubStudents(); };
   }, []);
+
+  // [Derived State] Active Profile
+  const activeProfile = useMemo(() => {
+      if (profiles.length === 0) return null;
+      if (activeProfileId) {
+          return profiles.find(p => p.id === activeProfileId) || profiles[0];
+      }
+      return profiles[0];
+  }, [profiles, activeProfileId]);
+
+  const setActiveProfile = (profile: any) => {
+      if (profile?.id) setActiveProfileId(profile.id);
+  };
 
   // 2. Fetch Instructors
   useEffect(() => {
@@ -58,27 +68,41 @@ export function useStudentData() {
     const q = query(collection(db, "slots"), where("studentId", "==", activeProfile.id));
     const unsub = onSnapshot(q, (snap) => {
         const loadedLessons = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        // Sort ALL lessons chronologically
         loadedLessons.sort((a: any, b: any) => (a.date + a.time).localeCompare(b.date + b.time));
         setLessons(loadedLessons);
     });
     return () => unsub();
-  }, [activeProfile]);
+  }, [activeProfile?.id]); 
 
-  // 4. Derived State
+  // 4. [UPDATED] Smart Filtering (Clean Version)
   const upcomingLessons = useMemo(() => {
     return lessons.filter(l => {
-        const lessonDate = new Date(l.date + 'T' + l.time);
-        return lessonDate >= new Date() || l.status === 'Booked';
+        if (!l.date || !l.time) return false;
+        
+        const now = new Date();
+        // Fallback to 60m if endTime is missing (safety only), but generally expects endTime
+        const endTimeStr = l.endTime || new Date(new Date(`${l.date}T${l.time}`).getTime() + 60*60000).toTimeString().slice(0, 5);
+        const lessonEnd = new Date(`${l.date}T${endTimeStr}`);
+
+        // Keep lesson visible until it strictly ENDS
+        return now < lessonEnd && l.status === 'Booked';
     });
   }, [lessons]);
 
   const nextLesson = upcomingLessons.length > 0 ? upcomingLessons[0] : null;
 
   // 5. Actions
-  const cancelLesson = async (lessonId: string, onSuccess?: () => void) => {
-    if (!activeProfile) return;
+  const cancelLesson = async (
+    lessonId: string, 
+    onSuccess?: () => void, 
+    onError?: (msg: string) => void 
+  ) => {
+    if (!activeProfile || !lessonId || typeof lessonId !== 'string') {
+        if (onError) onError("Invalid lesson reference.");
+        return;
+    }
     
-    // [REMOVED] window.confirm logic is now handled by the UI component
     setActionLoading(true);
 
     try {
@@ -98,9 +122,11 @@ export function useStudentData() {
             throw new Error("Unauthorized cancellation.");
         }
 
+        // Clean Reset
         transaction.update(slotRef, {
             status: 'Open',
-            studentId: null
+            studentId: null,
+            bookedBy: null // Clear the 'student'/'teacher' tag
         });
         
         transaction.update(studentRef, {
@@ -109,8 +135,8 @@ export function useStudentData() {
       });
       if (onSuccess) onSuccess();
     } catch (error: any) {
-      console.error(error);
-      alert("Failed to cancel: " + error.message);
+      console.error("Cancel Error:", error);
+      if (onError) onError(error.message || "Failed to cancel lesson.");
     } finally {
       setActionLoading(false);
     }
@@ -118,13 +144,14 @@ export function useStudentData() {
 
   return {
     loading,
-    actionLoading, // [NEW] Exported for modal spinner
+    actionLoading,
     userProfile,
     profiles,
     activeProfile,
     setActiveProfile,
     instructors,
-    lessons,
+    lessons,         
+    upcomingLessons, 
     nextLesson,
     cancelLesson
   };

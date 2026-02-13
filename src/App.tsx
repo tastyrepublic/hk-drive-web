@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import './i18n';
 import { RootRouter } from './components/RootRouter/RootRouter';
 import { Toast } from './components/Toast/Toast';
 

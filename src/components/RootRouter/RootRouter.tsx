@@ -327,7 +327,16 @@ export function RootRouter({ theme, toggleTheme, showToast }: Props) {
   }
 
   if (user && userRole) {
-    if (userRole === 'student') return <StudentApp userEmail={user.email} theme={theme} toggleTheme={toggleTheme} />;
+    if (userRole === 'student') {
+        return (
+            <StudentApp 
+                userEmail={user.email} 
+                theme={theme} 
+                toggleTheme={toggleTheme} 
+                showToast={showToast} // <--- ADD THIS LINE
+            />
+        );
+    }
     return <TeacherDashboard user={user} theme={theme} toggleTheme={toggleTheme} showToast={showToast} />;
   }
 

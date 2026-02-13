@@ -1,58 +1,99 @@
 import { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { signOut } from 'firebase/auth';
 import { auth } from '../../firebase';
 import { 
-  Loader2, ArrowLeft, ChevronDown, 
-  Menu, LogOut, Sun, Moon, User, X, Car
+  Car, Loader2, ArrowLeft, ChevronDown, 
+  Menu, LogOut, Sun, Moon, User, X 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+// --- IMPORTS ---
 import { useStudentData } from '../../hooks/useStudentData';
-
-// Sub-Views
+import { ConfirmModal } from '../Modals/ConfirmModal';
 import { DashboardView } from './DashboardView';
 import { ProfileView } from './ProfileView';
 import { ScheduleView } from './ScheduleView';
 import { PackagesView } from './PackagesView';
-
-// Components
-import { ConfirmModal } from '../Modals/ConfirmModal'; // [NEW IMPORT]
-
+import { LanguageSwitcher } from '../LanguageSwitcher'; // [ADDED]
 import { getVehicleLabel } from '../../constants/list';
+
+type ToastType = 'success' | 'error';
 
 interface Props {
   userEmail: string | null;
   theme: 'dark' | 'light';
   toggleTheme: () => void;
+  showToast: (msg: string, type?: ToastType) => void;
 }
 
 type View = 'dashboard' | 'profile' | 'schedule' | 'packages'; 
 
-export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
+export function StudentApp({ userEmail, theme, toggleTheme, showToast }: Props) {
+  
+  const { t } = useTranslation();
   const [currentView, setCurrentView] = useState<View>('dashboard');
   
+  // --- CUSTOM HOOK ---
   const { 
     loading, 
-    actionLoading, // [NEW]
+    actionLoading,
     userProfile, 
     profiles, 
     activeProfile, 
     setActiveProfile, 
     instructors, 
     lessons, 
-    nextLesson, 
+    upcomingLessons,
     cancelLesson 
   } = useStudentData();
 
-  // --- CONFIRM MODAL STATE ---
+  // Modal State
   const [confirmDialog, setConfirmDialog] = useState<{ isOpen: boolean; title: string; msg: string; lessonId?: string } | null>(null);
 
-  // Menu States
+  // Menu UI States
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null); 
   const profileButtonRef = useRef<HTMLButtonElement>(null);
 
+  // --- HANDLERS ---
+
+  // [UPDATED] Accept ID string only. We look up the object here.
+  const handleCancelClick = (lessonId: string) => {
+      // 1. Find the lesson object to get details for the message
+      const targetLesson = lessons.find(l => l.id === lessonId);
+
+      if (!targetLesson) {
+          showToast("Error: Lesson not found.", "error");
+          return;
+      }
+
+      // 2. Set Dialog
+      setConfirmDialog({
+          isOpen: true,
+          title: "Cancel Lesson",
+          msg: `Are you sure you want to cancel your lesson on ${targetLesson.date} at ${targetLesson.time}?`,
+          lessonId: lessonId 
+      });
+  };
+
+  const executeCancel = async () => {
+    if (confirmDialog?.lessonId) {
+        await cancelLesson(
+            confirmDialog.lessonId, 
+            () => {
+                setConfirmDialog(null);
+                showToast("Lesson cancelled successfully.", "success");
+            },
+            (errorMsg) => {
+                showToast(errorMsg, "error");
+            }
+        );
+    }
+  };
+
+  // Outside Click Listener
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent | TouchEvent) => {
       const target = event.target as Node;
@@ -67,24 +108,6 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
       document.removeEventListener('touchstart', handleClickOutside);
     };
   }, [isProfileMenuOpen]);
-
-  // --- HANDLERS ---
-  const handleCancelClick = (lessonId: string) => {
-      setConfirmDialog({
-          isOpen: true,
-          title: "Cancel Lesson",
-          msg: "Are you sure you want to cancel this lesson? 1 Credit will be refunded to your balance.",
-          lessonId
-      });
-  };
-
-  const executeCancel = async () => {
-      if (confirmDialog?.lessonId) {
-          await cancelLesson(confirmDialog.lessonId, () => {
-              setConfirmDialog(null); // Close modal on success
-          });
-      }
-  };
 
   const pageVariants = {
     initial: { opacity: 0, scale: 0.98, y: 10 },
@@ -104,9 +127,8 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
   );
 
   return (
-    <div data-portal="student" className={`min-h-screen pb-20 ${bgColor} ${textColor} font-sans transition-colors duration-300 overflow-x-hidden`}>
+    <div data-portal="student" className={`min-h-screen pb-20 ${bgColor} ${textColor} font-sans transition-colors duration-300 overflow-x-hidden relative`}>
         
-        {/* CONFIRM MODAL */}
         <ConfirmModal 
             isOpen={!!confirmDialog?.isOpen}
             title={confirmDialog?.title || ''}
@@ -146,7 +168,9 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
                                   <span>{userProfile?.name || activeProfile?.name || 'Student'}</span>
                                   {profiles.length > 1 && <ChevronDown size={16} className={`transition-transform ${isProfileMenuOpen ? 'rotate-180' : ''}`} />}
                               </button>
-                              <p className="text-[10px] uppercase tracking-widest text-primary font-black">Student Portal</p>
+                              <p className="text-[10px] uppercase tracking-widest text-primary font-black">
+                                {t('common.student_portal')}
+                              </p>
                               
                               <AnimatePresence>
                                   {isProfileMenuOpen && (
@@ -172,7 +196,7 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
                                                           <div className={`space-y-1 transition-transform duration-200 ${isActive ? 'translate-x-1' : ''}`}>
                                                               <div className={`text-sm font-black tracking-tight ${isActive ? 'text-primary' : textColor}`}>{inst?.name || 'Instructor'}</div>
                                                               <div className="text-[10px] uppercase tracking-wider font-bold flex flex-col gap-0.5">
-                                                                  <span className={`flex items-center gap-1 ${isActive ? 'text-primary/90' : 'opacity-50'}`}><Car size={10} /> {getVehicleLabel(p.vehicle) || 'Standard'}</span>
+                                                                  <span className={`flex items-center gap-1 ${isActive ? 'text-primary/90' : 'opacity-50'}`}><Car size={10} /> {t(getVehicleLabel(p.vehicle))}</span>
                                                                   <span className={`${isActive ? 'text-primary font-black scale-105 origin-left' : 'opacity-40'} transition-transform`}>{p.balance} Credits Available</span>
                                                               </div>
                                                           </div>
@@ -193,6 +217,7 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
                 <div className="flex items-center justify-end gap-1 sm:gap-2 w-auto md:w-auto flex-shrink-0 relative">
                     <div className={`flex items-center gap-2 transition-all duration-500 ease-in-out ${"absolute opacity-0 scale-90 pointer-events-none md:static md:opacity-100 md:scale-100 md:pointer-events-auto"}`}>
                         <button onClick={() => setCurrentView('profile')} className={`p-1.5 sm:p-2 rounded-lg transition-colors ${currentView === 'profile' ? 'text-primary bg-primary/10' : 'text-textGrey hover:text-white hover:bg-white/10'}`}><User size={18} /></button>
+                        <LanguageSwitcher /> {/* [ADDED] */}
                         <button onClick={toggleTheme} className="p-1.5 sm:p-2 rounded-lg text-textGrey hover:text-white hover:bg-white/10 transition-colors">{theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}</button>
                         <button onClick={() => signOut(auth)} className="p-1.5 sm:p-2 rounded-lg text-textGrey hover:text-statusRed hover:bg-statusRed/10 transition-colors"><LogOut size={18} /></button>
                     </div>
@@ -203,6 +228,7 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
                         <>
                             <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setIsMobileMenuOpen(false)} />
                             <div className={`absolute top-14 right-0 w-56 rounded-xl border shadow-2xl p-2 flex flex-col gap-1 z-50 md:hidden animate-in zoom-in-95 duration-200 origin-top-right ${cardColor}`}>
+                                <LanguageSwitcher isMobile /> {/* [ADDED] */}
                                 <button onClick={() => { setCurrentView('profile'); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-bold transition-colors ${currentView === 'profile' ? 'text-primary bg-primary/10' : (isDark ? 'text-textGrey hover:bg-white/10' : 'text-gray-600 hover:bg-black/5')}`}><User size={16} /> <span>My Profile</span></button>
                                 <button onClick={() => { toggleTheme(); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-bold transition-colors ${isDark ? 'text-textGrey hover:bg-white/10' : 'text-gray-600 hover:bg-black/5'}`}>{theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />} <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span></button>
                                 <div className={`h-[1px] my-1 mx-2 ${isDark ? 'bg-gray-800/50' : 'bg-gray-200'}`} />
@@ -229,11 +255,11 @@ export function StudentApp({ userEmail, theme, toggleTheme }: Props) {
                         <DashboardView 
                           activeProfile={activeProfile} 
                           instructor={instructors[activeProfile?.teacherId]} 
-                          nextLesson={nextLesson} 
                           lessons={lessons} 
+                          upcomingLessons={upcomingLessons} 
                           theme={theme}
                           setCurrentView={setCurrentView}
-                          onCancelLesson={handleCancelClick} // [UPDATED] Pass the modal trigger
+                          onCancelLesson={handleCancelClick} // Passed down
                         />
                     )}
 
