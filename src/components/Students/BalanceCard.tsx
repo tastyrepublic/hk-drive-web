@@ -1,6 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { CreditCard, Car, MapPin, Route as RouteIcon } from 'lucide-react';
+import { motion } from 'framer-motion'; // [1] Import Motion
 import { getVehicleLabel, getExamCenterLabel, EXAM_ROUTES } from '../../constants/list';
+import { GLOBAL_TRANSITION } from '../../constants/animations'; // [2] Import Physics
 
 interface Props {
   activeProfile: any;
@@ -15,7 +17,11 @@ export function BalanceCard({ activeProfile }: Props) {
     : [];
 
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 text-white shadow-lg p-6">
+    <motion.div 
+      layout // [3] Enable layout animation
+      transition={GLOBAL_TRANSITION} 
+      className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 text-white shadow-lg p-6"
+    >
       
       <div className="absolute top-0 right-0 p-4 opacity-20">
         <CreditCard size={100} className="!text-white" />
@@ -70,6 +76,6 @@ export function BalanceCard({ activeProfile }: Props) {
             </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
