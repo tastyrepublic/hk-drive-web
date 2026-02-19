@@ -14,12 +14,17 @@
     "history": "紀錄",
     "min": "分鐘",
     "general": "普通",
-    "error_not_found": "錯誤：找不到課堂資料。"
+    "error_not_found": "錯誤：找不到課堂資料。",
+    "whatsapp": "聯絡 WhatsApp",
+    "book_lesson": "預約課堂"
   },
   "balance": {
     "title": "課堂餘額",
     "routes": "需練習路線",
-    "no_center": "未分配考試中心"
+    "no_center": "未分配考試中心",
+    "top_up": "增值",
+    "top_up_desc": "購買課堂 / 向導師申請",
+    "progress_title": "學習進度"
   },
   "next_lesson": {
     "happening": "正在進行",
@@ -104,5 +109,10 @@
     "maintenance": "維修",
     "holiday": "假期",
     "diu": "Diu"
+  },
+  "instructor": {
+    "title": "導師資料",
+    "role": "駕駛導師",
+    "placeholder": "導師"
   }
 }

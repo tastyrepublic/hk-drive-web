@@ -1,4 +1,6 @@
 /** @type {import('tailwindcss').Config} */
+import colors from 'tailwindcss/colors';
+
 export default {
   content: [
     "./index.html",
@@ -7,14 +9,23 @@ export default {
   theme: {
     extend: {
       colors: {
-        // --- NEW DYNAMIC BRAND COLOR ---
-        // Automatically swaps between Orange/Blue based on your CSS variable
-        primary: 'var(--color-primary)', 
+        // --- GRADIENT PALETTES ---
+        teal: colors.teal,     // [NEW] For Instructor Card (Professional/Tech look)
+        cyan: colors.cyan,     // [NEW] Matches well with Teal
+        sky: colors.sky,
+        indigo: colors.indigo,
+        violet: colors.violet,
+        fuchsia: colors.fuchsia,
+        pink: colors.pink,
+        rose: colors.rose,
+        amber: colors.amber,
+        niceOrange: colors.orange,
 
         // --- YOUR EXISTING COLORS ---
+        primary: 'var(--color-primary)', 
         midnight: '#12161F',
         slate: '#1F2531',
-        orange: '#F57F17',
+        orange: '#F57F17', 
         header: '#1A202C',
         textGrey: '#B0BEC5',
         gridLine: '#2C3340',

@@ -14,12 +14,17 @@
     "history": "History",
     "min": "min",
     "general": "General",
-    "error_not_found": "Error: Lesson not found."
+    "error_not_found": "Error: Lesson not found.",
+    "whatsapp": "Contact on WhatsApp",
+    "book_lesson": "Book a Lesson"
   },
   "balance": {
     "title": "Lesson Balance",
     "routes": "Routes to Master",
-    "no_center": "No Exam Center Assigned"
+    "no_center": "No Exam Center Assigned",
+    "top_up": "Top Up",
+    "top_up_desc": "Buy more lessons / Request from teacher",
+    "progress_title": "Learning Progress"
   },
   "next_lesson": {
     "happening": "Happening Now",
@@ -32,7 +37,7 @@
     "cancel_confirm": "Are you sure you want to cancel your lesson on {{date}} at {{time}}?",
     "cancel_success": "Lesson cancelled successfully."
   },
-    "vehicle": {
+  "vehicle": {
     "private_auto": "Private Car (Auto) 1A",
     "private_manual": "Private Car (Manual) 1",
     "van_auto": "Light Goods (Van) 2A",
@@ -104,5 +109,10 @@
     "maintenance": "Maintenance",
     "holiday": "Holiday",
     "diu": "Diu"
+  },
+  "instructor": {
+    "title": "Instructor Info",
+    "role": "Driving Instructor",
+    "placeholder": "Instructor"
   }
 }

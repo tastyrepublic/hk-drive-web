@@ -30,18 +30,19 @@ export function LanguageSwitcher({ isMobile = false }: LanguageSwitcherProps) {
   return (
     <button
       onClick={toggleLanguage}
-      className="p-1.5 sm:p-2 w-9 h-9 flex items-center justify-center rounded-lg text-textGrey hover:text-white hover:bg-white/10 transition-colors group relative overflow-hidden"
+      /* [FIX] Removed 'w-9 h-9'. Now relies on padding + content size to match adjacent buttons. */
+      className="p-1.5 sm:p-2 flex items-center justify-center rounded-lg text-textGrey hover:text-white hover:bg-white/10 transition-colors group relative overflow-hidden"
       title={i18n.language === 'en' ? 'Switch to Chinese' : '切換至英文'}
     >
       <AnimatePresence mode="wait">
         <motion.span
           key={displayChar}
-          /* [FIX] We put the offset directly in the 'y' property of animate */
           initial={{ y: 10, opacity: 0 }}
           animate={{ y: 1.5, opacity: 1 }} 
           exit={{ y: -10, opacity: 0 }}
           transition={{ duration: 0.2, ease: "easeOut" }}
-          className="inline-block text-[18px] font-semibold leading-none select-none"
+          /* [FIX] Added 'w-[18px]' to mimic the 18px width of Lucide icons exactly */
+          className="inline-block text-[18px] font-semibold leading-none select-none w-[18px] text-center"
         >
           {displayChar}
         </motion.span>
