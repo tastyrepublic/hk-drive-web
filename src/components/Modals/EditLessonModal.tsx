@@ -242,6 +242,8 @@ export function EditLessonModal({
       onClose={() => setEditingSlot(null)}
       title={isEditing ? (isBlockMode ? "Edit Block" : "Edit Lesson") : "Add New Slot"} 
       maxWidth="max-w-md"
+      isSaving={saveSlotLoading}
+      isModified={isSlotModified}
       footer={
         <div className="flex justify-between items-center gap-4">
            {isEditing ? (

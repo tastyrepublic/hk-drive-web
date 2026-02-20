@@ -216,14 +216,20 @@ export function StudentClaimView({
   
   const shakeAnimation = { x: [0, -6, 6, -6, 6, 0], transition: { duration: 0.4 } };
 
+  // NEW: HANDLE ALREADY CLAIMED CASE (For teachers testing or students already in)
   if (isAlreadyClaimed) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-midnight">
-        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-md p-8 border border-gray-800 rounded-[2.5rem] bg-slate text-center space-y-6">
+        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-md p-10 border border-gray-800 rounded-[2.5rem] bg-slate text-center space-y-6">
           <div className="flex justify-center"><div className="p-4 rounded-full bg-blue-500/10 text-blue-500"><ShieldCheck size={48} /></div></div>
           <h2 className="text-2xl font-black text-white">Already Linked</h2>
-          <p className="text-textGrey text-sm">This invitation has already been claimed.</p>
-          <button onClick={() => window.location.href = '/'} className="w-full p-4 rounded-2xl bg-blue-600 text-white font-black uppercase tracking-widest hover:bg-blue-500 transition-all">Go to Login</button>
+          <p className="text-textGrey text-sm px-4">This invitation has already been claimed. If you are the owner, please go to your dashboard.</p>
+          <button 
+            onClick={() => window.location.href = '/'} 
+            className="w-full p-4 rounded-2xl bg-blue-600 text-white font-black uppercase tracking-widest hover:bg-blue-500 transition-all shadow-lg active:scale-95"
+          >
+            Go to Dashboard
+          </button>
         </motion.div>
       </div>
     );

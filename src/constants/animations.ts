@@ -1,4 +1,4 @@
-import { type Variants } from 'framer-motion';
+import { type Variants, type Transition } from 'framer-motion';
 
 /**
  * GLOBAL_TRANSITION: "The Apple Spring"
@@ -79,4 +79,22 @@ export const smoothScrollTo = (ref: any) => {
         ref.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 100);
   }
+};
+
+/**
+ * PAGE_VARIANTS: Used for top-level route transitions
+ * Provides a smooth fade and slight zoom/slide effect when switching pages.
+ */
+export const PAGE_VARIANTS: Variants = {
+  initial: { opacity: 0, scale: 0.98, y: 10 },
+  animate: { opacity: 1, scale: 1, y: 0 },
+  exit: { opacity: 0, scale: 1.02, y: -10 },
+};
+
+/**
+ * PAGE_TRANSITION: The easing curve and timing for page changes.
+ */
+export const PAGE_TRANSITION: Transition = { 
+  duration: 0.25, 
+  ease: [0.4, 0, 0.2, 1] 
 };

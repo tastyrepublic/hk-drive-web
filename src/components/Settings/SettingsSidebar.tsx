@@ -20,18 +20,22 @@ export function SettingsSidebar({ activeTab, onTabChange }: Props) {
         const Icon = item.icon;
         return (
           <button
-  key={item.id}
-  onClick={() => onTabChange(item.id as SettingTab)}
-  // Reverted to exactly 'transition' as per your original code
-  className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition whitespace-nowrap w-full ${
-    activeTab === item.id 
-      ? 'bg-orange text-white' 
-      : 'text-textGrey hover-bg-theme'
-  }`}
->
-  <Icon size={18} />
-  {item.label}
-</button>
+            key={item.id}
+            // GUARD: Only change tabs if it's actually a different tab
+            onClick={() => {
+                if (activeTab !== item.id) {
+                    onTabChange(item.id as SettingTab);
+                }
+            }}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition whitespace-nowrap w-full ${
+              activeTab === item.id 
+                ? 'bg-orange text-white' 
+                : 'text-textGrey hover-bg-theme'
+            }`}
+          >
+            <Icon size={18} />
+            {item.label}
+          </button>
         );
       })}
     </aside>

@@ -84,6 +84,7 @@ export function ConfirmModal({
       onClose={() => { clearTimer(); onCancel(); }} 
       title="" 
       maxWidth="max-w-sm"
+      isSaving={isLoading}
     >
       <div className="flex flex-col items-center text-center pt-2">
         

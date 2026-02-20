@@ -6,7 +6,7 @@ import {
   User, Phone, Car, MapPin, 
   Route as RouteIcon 
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion'; //
+import { motion, AnimatePresence } from 'framer-motion'; 
 import { Modal } from './Modal'; 
 import { ConfirmModal } from './ConfirmModal';
 
@@ -230,6 +230,9 @@ export function StudentFormModal({
   const inputView = "bg-transparent border border-transparent font-bold opacity-100 cursor-default";
   const inputEdit = "bg-midnight border border-gray-800 focus:border-orange";
 
+  // --- COMBINED BUSY STATE FOR ALL ASYNC ACTIONS ---
+  const isModalBusy = saveStudentLoading || inviteStatus === 'sending' || cancelLoading || unlinkLoading;
+
   return (
     <>
       <ConfirmModal 
@@ -246,12 +249,15 @@ export function StudentFormModal({
         onClose={() => setIsOpen(false)}
         title={isEditing ? 'Student Details' : 'Add Student'}
         maxWidth="max-w-md"
+        isSaving={isModalBusy}
+        isModified={isStudentModified && !isLocked}
         footer={
           <div className="flex justify-between items-center gap-3 w-full">
              {isEditing ? (
                 <button 
                   onClick={onDelete}
-                  className="p-3 rounded-xl bg-midnight border border-gray-800 text-statusRed hover:bg-statusRed/10 hover:border-statusRed transition-colors"
+                  disabled={isModalBusy}
+                  className={`p-3 rounded-xl bg-midnight border border-gray-800 text-statusRed transition-colors ${isModalBusy ? 'opacity-30 cursor-not-allowed' : 'hover:bg-statusRed/10 hover:border-statusRed'}`}
                 >
                   <Trash2 size={20} />
                 </button>
@@ -261,8 +267,8 @@ export function StudentFormModal({
                 {!isLocked && isEditing && (
                     <button 
                         onClick={handleCancelEdit}
-                        disabled={saveStudentLoading}
-                        className="px-6 py-3 rounded-xl font-bold text-textGrey hover:bg-white/5 transition-colors"
+                        disabled={isModalBusy}
+                        className="px-6 py-3 rounded-xl font-bold text-textGrey hover:bg-white/5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                     >
                         Cancel
                     </button>
@@ -271,7 +277,7 @@ export function StudentFormModal({
                 {(!isLocked || !isEditing) && (
                     <button 
                         onClick={async () => { await onSave(); setIsLocked(true); }} 
-                        disabled={saveStudentLoading || !isStudentModified || !!duplicateStudent}
+                        disabled={isModalBusy || !isStudentModified || !!duplicateStudent}
                         className="px-6 py-3 rounded-xl font-bold bg-orange text-white hover:brightness-110 shadow-lg disabled:opacity-50 disabled:bg-gray-800 disabled:text-gray-500 disabled:shadow-none flex items-center gap-2"
                     >
                         {saveStudentLoading ? <Loader2 className="animate-spin" size={20} /> : 'Save'}
@@ -281,7 +287,8 @@ export function StudentFormModal({
                 {isLocked && isEditing && (
                     <button 
                         onClick={() => setIsOpen(false)}
-                        className="px-6 py-3 rounded-xl font-bold bg-white/10 text-white hover:bg-white/20 transition-colors"
+                        disabled={isModalBusy}
+                        className={`px-6 py-3 rounded-xl font-bold text-white transition-colors ${isModalBusy ? 'bg-white/5 opacity-50 cursor-not-allowed' : 'bg-white/10 hover:bg-white/20'}`}
                     >
                         Close
                     </button>
@@ -371,9 +378,6 @@ export function StudentFormModal({
                     )}
                 </div>
 
-                {/* ... Rest of the form inputs (Vehicle, Exam Center) ... */}
-                {/* (I am keeping the rest of your form logic identical, just hiding it for brevity in this response block, 
-                    but in your actual file, you keep the code below exactly as it was) */}
                 <div className="grid grid-cols-2 gap-4">
                     {/* CUSTOM VEHICLE DROPDOWN */}
                     <div className="space-y-1" ref={vehicleRef}>
@@ -498,7 +502,6 @@ export function StudentFormModal({
                 </div>
             </div>
             
-            {/* The rest of your sections (Exam Routes Display, Connection Section) remain unchanged */}
             {isLocked && studentForm.examRoute && studentForm.examRoute !== 'Not Assigned' && relevantRoutes.length > 0 && (
                 <div className="mt-4 pt-4 border-t border-gray-800/50 animate-in fade-in slide-in-from-top-1">
                      <label className="text-[10px] text-textGrey uppercase font-black px-1 mb-2 flex items-center gap-1">
@@ -544,8 +547,8 @@ export function StudentFormModal({
                              <div className="mt-5 pt-4 border-t border-statusGreen/10 flex justify-end">
                                  <button 
                                     onClick={handleUnlinkClick} 
-                                    disabled={unlinkLoading} 
-                                    className="text-xs font-bold text-statusGreen hover:text-white transition-colors flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-statusGreen/20"
+                                    disabled={unlinkLoading || isModalBusy} 
+                                    className="text-xs font-bold text-statusGreen hover:text-white transition-colors flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-statusGreen/20 disabled:opacity-50 disabled:cursor-not-allowed"
                                  >
                                     {unlinkLoading ? <Loader2 className="animate-spin" size={14} /> : <Unlink size={14} />}
                                     Unlink Device
@@ -587,13 +590,13 @@ export function StudentFormModal({
                                     <div className="flex gap-3">
                                         <button
                                             onClick={handleInviteClick}
-                                            disabled={inviteStatus === 'sending' || cancelLoading}
+                                            disabled={isModalBusy}
                                             className={`flex-1 py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
                                                 inviteStatus === 'sent' 
                                                     ? 'bg-orange text-white shadow-orange/20 shadow-lg' 
                                                     : showPendingUI
-                                                        ? 'bg-midnight text-orange border border-orange/30 hover:bg-orange/10' 
-                                                        : 'w-full bg-gradient-to-r from-orange to-red-500 text-white hover:brightness-110 shadow-lg shadow-orange/20' 
+                                                        ? 'bg-midnight text-orange border border-orange/30 hover:bg-orange/10 disabled:opacity-50 disabled:cursor-not-allowed' 
+                                                        : 'w-full bg-gradient-to-r from-orange to-red-500 text-white hover:brightness-110 shadow-lg shadow-orange/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none' 
                                             }`}
                                         >
                                             {inviteStatus === 'sending' ? (
@@ -608,7 +611,7 @@ export function StudentFormModal({
                                         {showPendingUI && (
                                             <button
                                                 onClick={handleCopyLink}
-                                                disabled={!liveStudent.inviteToken}
+                                                disabled={!liveStudent.inviteToken || isModalBusy}
                                                 className={`px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] border ${
                                                     copyStatus === 'copied'
                                                     ? 'bg-orange text-white border-orange' 
@@ -627,8 +630,8 @@ export function StudentFormModal({
                                     {showPendingUI && (
                                         <button 
                                             onClick={handleRevokeClick} 
-                                            disabled={cancelLoading} 
-                                            className="w-full py-3 rounded-xl border border-statusRed/30 text-statusRed hover:bg-statusRed/10 transition-all text-xs font-bold flex items-center justify-center gap-2 active:scale-[0.98]"
+                                            disabled={isModalBusy} 
+                                            className="w-full py-3 rounded-xl border border-statusRed/30 text-statusRed hover:bg-statusRed/10 transition-all text-xs font-bold flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-30 disabled:cursor-not-allowed"
                                         >
                                             {cancelLoading ? <Loader2 className="animate-spin" size={14} /> : <Ban size={14} />}
                                             {cancelLoading ? 'Canceling...' : 'Cancel Invite'}

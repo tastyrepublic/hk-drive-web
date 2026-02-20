@@ -3,6 +3,7 @@ import { auth, db } from '../../firebase';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore'; 
 import { Loader2, AlertCircle, Ban, Clock } from 'lucide-react';
+import { Routes, Route, Navigate } from 'react-router';
 
 // Views
 import { AuthView } from '../Auth/AuthView';
@@ -255,12 +256,13 @@ export function RootRouter({ theme, toggleTheme, showToast }: Props) {
       justClaimedRef.current = true;
       setUserRole('student');
       setInviteData(null); 
-      window.history.replaceState({}, '', '/'); 
+      window.history.replaceState({}, '', '/app'); 
       showToast("Account Linked Successfully!", "success"); 
   };
 
   // --- RENDER ---
 
+  // 1. App Loading (Initial boot)
   if (loading || inviteLoading) {
     return (
         <div className="h-screen flex flex-col items-center justify-center bg-midnight space-y-4">
@@ -270,6 +272,8 @@ export function RootRouter({ theme, toggleTheme, showToast }: Props) {
     );
   }
 
+  // 2. Invite Errors (Expired, Canceled, Invalid)
+  // We check this FIRST so even a logged-in teacher sees the "Expired" screen
   if (inviteError) {
     const isExpired = inviteError === 'expired';
     const isCanceled = inviteError === 'canceled';
@@ -304,17 +308,14 @@ export function RootRouter({ theme, toggleTheme, showToast }: Props) {
     );
   }
 
-  if (user && !userRole) {
-     if (inviteData) {
-        // Invite Page
-     } else {
-        return <div className="h-screen flex items-center justify-center bg-midnight"><Loader2 className="animate-spin text-neutral" size={48} /></div>;
-     }
-  }
-
+  // 3. Invite Processing (Valid Link Found)
+  // MOVED ABOVE AUTH: If there is an invite in the URL, show the Claim View.
+  // This allows teachers to test links or students to see "Already Claimed" while logged in.
   if (inviteData) {
     return (
-        <StudentClaimView 
+      <Routes>
+        <Route path="/invite" element={
+          <StudentClaimView 
             inviteCode={inviteData.id} 
             studentData={inviteData.student} 
             teacherName={inviteData.teacherName} 
@@ -322,23 +323,49 @@ export function RootRouter({ theme, toggleTheme, showToast }: Props) {
             toggleTheme={toggleTheme} 
             isAlreadyClaimed={inviteData.isClaimed} 
             onClaimSuccess={handleClaimSuccess} 
-        />
+          />
+        } />
+        <Route path="*" element={<Navigate to={`/invite?invite=${inviteData.id}&token=${inviteData.student.inviteToken}`} replace />} />
+      </Routes>
     );
   }
 
+  // 4. Spinner for profile fetching (The gray one!)
+  if (user && !userRole) {
+    return (
+        <div className="h-screen flex flex-col items-center justify-center bg-midnight space-y-4">
+            <Loader2 className="animate-spin text-neutral" size={48} />
+            <p className="text-xs text-textGrey font-mono animate-pulse">Loading profile...</p>
+        </div>
+    );
+  }
+
+  // 5. Authenticated Users (Dashboard redirection)
   if (user && userRole) {
     if (userRole === 'student') {
         return (
-            <StudentApp 
-                userEmail={user.email} 
-                theme={theme} 
-                toggleTheme={toggleTheme} 
-                showToast={showToast} // <--- ADD THIS LINE
-            />
+          <Routes>
+            <Route path="/app/*" element={<StudentApp userEmail={user.email} theme={theme} toggleTheme={toggleTheme} showToast={showToast} />} />
+            <Route path="*" element={<Navigate to="/app" replace />} />
+          </Routes>
         );
     }
-    return <TeacherDashboard user={user} theme={theme} toggleTheme={toggleTheme} showToast={showToast} />;
+    
+    if (userRole === 'teacher') {
+        return (
+          <Routes>
+            <Route path="/dashboard/*" element={<TeacherDashboard user={user} theme={theme} toggleTheme={toggleTheme} showToast={showToast} />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        );
+    }
   }
 
-  return <AuthView theme={theme} toggleTheme={toggleTheme} onLoginSuccess={() => showToast("Welcome back!")} />;
+  // 6. Public Area (Login)
+  return (
+    <Routes>
+      <Route path="/" element={<AuthView theme={theme} toggleTheme={toggleTheme} onLoginSuccess={() => showToast("Welcome back!", "success")} />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
 }

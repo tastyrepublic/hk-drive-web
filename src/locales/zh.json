@@ -16,7 +16,9 @@
     "general": "普通",
     "error_not_found": "錯誤：找不到課堂資料。",
     "whatsapp": "聯絡 WhatsApp",
-    "book_lesson": "預約課堂"
+    "book_lesson": "預約課堂",
+    "yes": "是",
+    "no": "否"
   },
   "balance": {
     "title": "課堂餘額",
@@ -114,5 +116,14 @@
     "title": "導師資料",
     "role": "駕駛導師",
     "placeholder": "導師"
+  },
+  "notifications": {
+    "title": "通知",
+    "markAllRead": "全部標記為已讀",
+    "clearAll": "清除全部",
+    "clearConfirm": "確定清除全部？",
+    "emptyState": "暫無新通知",
+    "reviewRequest": "查看請求",
+    "dismiss": "忽略"
   }
 }

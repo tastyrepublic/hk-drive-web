@@ -16,7 +16,9 @@
     "general": "General",
     "error_not_found": "Error: Lesson not found.",
     "whatsapp": "Contact on WhatsApp",
-    "book_lesson": "Book a Lesson"
+    "book_lesson": "Book a Lesson",
+    "yes": "YES",
+    "no": "NO"
   },
   "balance": {
     "title": "Lesson Balance",
@@ -114,5 +116,14 @@
     "title": "Instructor Info",
     "role": "Driving Instructor",
     "placeholder": "Instructor"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "markAllRead": "Mark all read",
+    "clearAll": "Clear all",
+    "clearConfirm": "Clear all?",
+    "emptyState": "No new notifications",
+    "reviewRequest": "Review Request",
+    "dismiss": "Dismiss"
   }
 }

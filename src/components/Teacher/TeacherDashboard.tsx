@@ -10,6 +10,8 @@ import {
   Settings as SettingsIcon, Calendar, Users, CreditCard, 
   Menu, X 
 } from 'lucide-react';
+import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // Components
 import { DiaryView } from '../Diary/DiaryView';
@@ -25,6 +27,7 @@ import { useLessonManager } from '../../hooks/useLessonManager';
 import { useStudentManager } from '../../hooks/useStudentManager';
 
 import { DEFAULT_VEHICLE_ID } from '../../constants/list';
+import { PAGE_VARIANTS, PAGE_TRANSITION } from '../../constants/animations';
 
 // --- TYPES ---
 type Tab = 'diary' | 'students' | 'payments' | 'settings';
@@ -41,7 +44,7 @@ interface LessonForm {
   isDouble?: boolean;
   status?: 'Booked' | 'Blocked' | 'Open';
   customDuration?: number;
-  examCenter?: string; // [FIX 1] Added interface field
+  examCenter?: string; 
 }
 
 interface Props {
@@ -52,7 +55,14 @@ interface Props {
 }
 
 export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props) {
-  const [activeTab, setActiveTab] = useState<Tab>('diary');
+  const navigate = useNavigate();
+  const location = useLocation();
+  
+  const path = location.pathname;
+  const activeTab = path.includes('/students') ? 'students' : 
+                    path.includes('/payments') ? 'payments' : 
+                    path.includes('/settings') ? 'settings' : 'diary';
+
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // STATE: DATA
@@ -92,7 +102,7 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
       time: '', 
       location: '', 
       type: DEFAULT_VEHICLE_ID,
-      examCenter: '' // [FIX 2] Init field
+      examCenter: '' 
   });
 
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
@@ -168,7 +178,6 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
         : DEFAULT_VEHICLE_ID;
 
     if (slot.id) {
-        // --- A. EDITING EXISTING SLOT ---
         setEditForm({
             id: slot.id,
             studentId: slot.studentId || '',
@@ -179,13 +188,10 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
             isDouble: slot.isDouble || false, 
             status: slot.status || 'Booked',
             customDuration: slot.customDuration || undefined,
-            examCenter: slot.examCenter || '' // [FIX 3] LOAD EXAM CENTER
+            examCenter: slot.examCenter || '' 
         });
     } else {
-        // --- B. CREATING NEW SLOT ---
-        
         if (!slot.date) {
-            // >>> FRESH START (Add Button) <<<
             setEditForm({
                 date: '', 
                 time: '',
@@ -195,10 +201,9 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
                 isDouble: profile.defaultDoubleLesson ?? false,
                 status: 'Booked',
                 customDuration: undefined,
-                examCenter: '' // [FIX 4] Reset
+                examCenter: '' 
             });
         } else {
-            // >>> STICKY START (Grid Click) <<<
             setEditForm(prev => ({
                 ...prev, 
                 id: undefined,
@@ -210,15 +215,13 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
                 isDouble: profile.defaultDoubleLesson ?? false,
                 status: 'Booked',
                 customDuration: undefined,
-                examCenter: '' // [FIX 5] Reset
+                examCenter: '' 
             }));
         }
     }
   };
   
-  // Logic checks
   const isBlockMode = editForm.status === 'Blocked';
-  // [FIX 6] Updated isFormValid to include examCenter check for lessons
   const isFormValid = isBlockMode 
     ? (!!editForm.date && !!editForm.time && !!editForm.type) 
     : (!!editForm.date && !!editForm.time && !!editForm.location && !!editForm.type && !!editForm.examCenter); 
@@ -232,7 +235,7 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
       (editForm.status || 'Booked') !== (editingSlot.status || 'Booked') || 
       (!!editForm.isDouble) !== (!!editingSlot.isDouble) || 
       (editForm.customDuration || 0) !== (editingSlot.customDuration || 0) ||
-      (editForm.examCenter || '') !== (editingSlot.examCenter || '') // [FIX 7] Check changes
+      (editForm.examCenter || '') !== (editingSlot.examCenter || '') 
   );
 
   const isSlotModified = isFormValid && hasChanges;
@@ -251,7 +254,6 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
             ? profile.vehicleTypes[0] 
             : DEFAULT_VEHICLE_ID;
 
-        // [FIX 8] Reset form to include empty examCenter
         setEditForm({ date: '', time: '', location: '', type: preferredVehicle, examCenter: '' }); 
         showToast(successMsg, 'success'); 
       }, 
@@ -371,14 +373,32 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
             {/* Middle: Tab Navigation */}
             <nav className="flex bg-midnight rounded-lg p-1 border border-gray-800 z-10 relative">
                 {(['diary', 'students', 'payments'] as Tab[]).map(t => (
-                  <button key={t} onClick={() => setActiveTab(t)} className={`px-3 sm:px-6 py-1.5 rounded-md text-[11px] sm:text-sm font-bold capitalize transition-all ${activeTab === t ? 'bg-orange text-white shadow-sm' : 'text-textGrey hover:text-orange'}`}>{t}</button>
+                  <button 
+                    key={t} 
+                    // GUARD: Only navigate if it's a different tab
+                    onClick={() => {
+                        if (activeTab !== t) navigate(`/dashboard/${t}`);
+                    }} 
+                    className={`px-3 sm:px-6 py-1.5 rounded-md text-[11px] sm:text-sm font-bold capitalize transition-all ${activeTab === t ? 'bg-orange text-white shadow-sm' : 'text-textGrey hover:text-orange'}`}
+                  >
+                    {t}
+                  </button>
                 ))}
             </nav>
 
             {/* Right: Actions */}
             <div className="flex items-center justify-end gap-1 sm:gap-2 w-auto md:w-32 flex-shrink-0 relative">
                 <div className={`flex items-center gap-2 transition-all duration-500 ease-in-out ${"absolute opacity-0 scale-90 pointer-events-none md:static md:opacity-100 md:scale-100 md:pointer-events-auto"}`}>
-                   <button onClick={() => setActiveTab('settings')} className={`p-1.5 sm:p-2 rounded-lg ${activeTab === 'settings' ? 'text-orange bg-orange/10' : 'text-textGrey hover-bg-theme'}`}><SettingsIcon size={18} /></button>
+                   {/* GUARD: Only navigate if not already on settings */}
+                   <button 
+                     onClick={() => {
+                        if (activeTab !== 'settings') navigate('/dashboard/settings');
+                     }} 
+                     className={`p-1.5 sm:p-2 rounded-lg ${activeTab === 'settings' ? 'text-orange bg-orange/10' : 'text-textGrey hover-bg-theme'}`}
+                   >
+                     <SettingsIcon size={18} />
+                   </button>
+                   
                    <button onClick={toggleTheme} className="p-1.5 sm:p-2 hover-bg-theme rounded-lg text-textGrey">{theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}</button>
                    <button onClick={() => signOut(auth)} className="p-1.5 sm:p-2 hover-bg-theme rounded-lg text-textGrey"><LogOut size={18} /></button>
                 </div>
@@ -393,7 +413,18 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
                   <>
                     <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setIsMobileMenuOpen(false)} />
                     <div className="absolute top-14 right-0 w-48 bg-slate border border-gray-800 rounded-xl shadow-2xl p-2 flex flex-col gap-1 z-50 md:hidden animate-in zoom-in-95 duration-200 origin-top-right">
-                       <button onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-bold transition-colors ${activeTab === 'settings' ? 'text-orange bg-orange/10' : 'text-textGrey hover-bg-theme'}`}><SettingsIcon size={16} /> <span>Settings</span></button>
+                       
+                       {/* GUARD: Mobile settings button */}
+                       <button 
+                         onClick={() => { 
+                            if (activeTab !== 'settings') navigate('/dashboard/settings'); 
+                            setIsMobileMenuOpen(false); 
+                         }} 
+                         className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-bold transition-colors ${activeTab === 'settings' ? 'text-orange bg-orange/10' : 'text-textGrey hover-bg-theme'}`}
+                       >
+                         <SettingsIcon size={16} /> <span>Settings</span>
+                       </button>
+
                        <button onClick={() => { toggleTheme(); setIsMobileMenuOpen(false); }} className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-bold text-textGrey hover-bg-theme transition-colors">{theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />} <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span></button>
                        <div className="h-[1px] bg-gray-800/50 my-1 mx-2" />
                        <button onClick={() => signOut(auth)} className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-bold text-statusRed hover:bg-statusRed/10 transition-colors"><LogOut size={16} /> <span>Log Out</span></button>
@@ -405,52 +436,62 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
       </header>
 
       {/* MAIN CONTENT */}
-      <main className="max-w-4xl mx-auto p-4 sm:p-6">
-        {activeTab === 'diary' && (
-            <div className="animate-in fade-in zoom-in-[0.99] duration-300">
-                <DiaryView 
-                  slots={processedSlots} 
-                  setEditingSlot={handleSetEditingSlot} 
-                  lessonDuration={Number(profile?.lessonDuration) || 45} 
-                />
-            </div>
-        )}
-        {activeTab === 'students' && (
-            <div className="animate-in fade-in zoom-in-[0.99] duration-300">
-                <StudentsView 
-                    students={students} 
-                    updateBalance={updateBalance} 
-                    onSendInvite={sendInvite} 
-                    openStudentModal={(stu: any) => { 
-                        const preferredVehicle = (profile?.vehicleTypes && profile.vehicleTypes.length > 0) 
-                            ? profile.vehicleTypes[0] 
-                            : DEFAULT_VEHICLE_ID;
+      <main className="max-w-4xl mx-auto p-4 sm:p-6 overflow-hidden relative">
+        <AnimatePresence mode="wait">
+            <motion.div
+                key={activeTab} 
+                variants={PAGE_VARIANTS}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={PAGE_TRANSITION}
+            >
+                <Routes location={location}>
+                    <Route path="/" element={<Navigate to="/dashboard/diary" replace />} />
+                    
+                    <Route path="/diary" element={
+                        <DiaryView 
+                          slots={processedSlots} 
+                          setEditingSlot={handleSetEditingSlot} 
+                          lessonDuration={Number(profile?.lessonDuration) || 45} 
+                        />
+                    } />
+                    
+                    <Route path="/students" element={
+                        <StudentsView 
+                            students={students} 
+                            updateBalance={updateBalance} 
+                            onSendInvite={sendInvite} 
+                            openStudentModal={(stu: any) => { 
+                                const preferredVehicle = (profile?.vehicleTypes && profile.vehicleTypes.length > 0) 
+                                    ? profile.vehicleTypes[0] 
+                                    : DEFAULT_VEHICLE_ID;
 
-                        setStudentForm(stu || { 
-                            id: '', 
-                            name: '', 
-                            phone: '', 
-                            vehicle: preferredVehicle, 
-                            examRoute: 'Not Assigned', 
-                            balance: 10 
-                        }); 
-                        setOriginalStudent(stu || null); 
-                        setIsEditingStudent(!!stu); 
-                        setIsStudentModalOpen(true); 
-                    }} 
-                />
-            </div>
-        )}
-        {activeTab === 'payments' && (
-            <div className="animate-in fade-in zoom-in-[0.99] duration-300">
-                <PaymentsView studentCount={students.length} />
-            </div>
-        )}
-        {activeTab === 'settings' && (
-            <div className="animate-in fade-in zoom-in-[0.99] duration-300">
-                <SettingsView profile={profile} setProfile={setProfile} onSave={saveProfile} isLoading={saveProfileLoading} />
-            </div>
-        )}
+                                setStudentForm(stu || { 
+                                    id: '', 
+                                    name: '', 
+                                    phone: '', 
+                                    vehicle: preferredVehicle, 
+                                    examRoute: 'Not Assigned', 
+                                    balance: 10 
+                                }); 
+                                setOriginalStudent(stu || null); 
+                                setIsEditingStudent(!!stu); 
+                                setIsStudentModalOpen(true); 
+                            }} 
+                        />
+                    } />
+
+                    <Route path="/payments" element={<PaymentsView studentCount={students.length} />} />
+                    
+                    <Route path="/settings/*" element={
+                        <SettingsView profile={profile} setProfile={setProfile} onSave={saveProfile} isLoading={saveProfileLoading} />
+                    } />
+
+                    <Route path="*" element={<Navigate to="/dashboard/diary" replace />} />
+                </Routes>
+            </motion.div>
+        </AnimatePresence>
       </main>
 
       {/* MODALS */}
