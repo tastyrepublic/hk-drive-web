@@ -19,7 +19,11 @@ import { HistoryModal } from '../Modals/HistoryModal';
 import { LanguageSwitcher } from '../LanguageSwitcher'; 
 import { getVehicleLabel } from '../../constants/list';
 import { NotificationsMenu } from '../Notifications/NotificationsMenu';
+import { useNotifications } from '../../hooks/useNotifications';
 import { PAGE_VARIANTS, PAGE_TRANSITION } from '../../constants/animations';
+
+// 1. ADDED: Import the Modal instead of the Widget
+import { QuickChatModal } from '../Modals/QuickChatModal';
 
 type ToastType = 'success' | 'error';
 
@@ -32,6 +36,7 @@ interface Props {
 
 export function StudentApp({ userEmail, theme, toggleTheme, showToast }: Props) {
   const { t } = useTranslation();
+  const { unreadCount } = useNotifications();
   
   const navigate = useNavigate();
   const location = useLocation();
@@ -57,6 +62,9 @@ export function StudentApp({ userEmail, theme, toggleTheme, showToast }: Props) 
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  
+  // 2. ADDED: State to track if the chat modal is open
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
   const profileMenuRef = useRef<HTMLDivElement>(null); 
   const profileButtonRef = useRef<HTMLButtonElement>(null);
@@ -98,6 +106,8 @@ export function StudentApp({ userEmail, theme, toggleTheme, showToast }: Props) 
   const cardColor = isDark ? 'bg-slate border-gray-800' : 'bg-white border-gray-200';
   const textColor = isDark ? 'text-white' : 'text-gray-900';
 
+  const activeInstructor = activeProfile?.teacherId ? instructors[activeProfile.teacherId] : null;
+
   if (loading) return (
     <div data-portal="student" className={`h-screen flex items-center justify-center ${bgColor}`}>
       <Loader2 className="animate-spin text-primary" size={48} />
@@ -115,6 +125,7 @@ export function StudentApp({ userEmail, theme, toggleTheme, showToast }: Props) 
         <header className={`sticky top-0 z-[60] border-b shadow-sm w-full ${isDark ? 'bg-header border-gray-800' : 'bg-white/90 border-gray-200 backdrop-blur-md'}`}>
             <div className="max-w-4xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
                 
+                {/* --- LEFT SIDE: Back Button / Profile Switcher --- */}
                 <div className="flex items-center gap-3">
                     <AnimatePresence mode="wait">
                       {isSubPage ? (
@@ -178,22 +189,30 @@ export function StudentApp({ userEmail, theme, toggleTheme, showToast }: Props) 
                     </AnimatePresence>
                 </div>
 
+                {/* --- RIGHT SIDE: Actions --- */}
                 <div className="flex items-center justify-end gap-1 sm:gap-2 w-auto md:w-auto flex-shrink-0 relative">
-                    <div className={`flex items-center gap-2 transition-all duration-500 ease-in-out ${"absolute opacity-0 scale-90 pointer-events-none md:static md:opacity-100 md:scale-100 md:pointer-events-auto"}`}>
-                        
-                        <div className="relative">
-                          <button 
-                            ref={notificationButtonRef} onClick={() => setIsNotificationsOpen(!isNotificationsOpen)} 
-                            className="p-1.5 sm:p-2 rounded-lg text-textGrey hover:text-white hover:bg-white/10 transition-colors relative"
-                          >
-                              <Bell size={18} />
-                              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-statusRed rounded-full border border-midnight"></span>
-                          </button>
-                          
-                          <NotificationsMenu isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} isDark={isDark} buttonRef={notificationButtonRef} />
-                        </div>
+                    
+                    {/* ALWAYS VISIBLE: Bell Icon */}
+                    <button 
+                        ref={notificationButtonRef} 
+                        onClick={() => setIsNotificationsOpen(!isNotificationsOpen)} 
+                        className="p-2 rounded-lg text-textGrey hover:text-white hover:bg-white/10 transition-colors relative"
+                    >
+                        <Bell className="w-5 h-5 sm:w-[18px] sm:h-[18px]" />
+                        <AnimatePresence>
+                            {unreadCount > 0 && (
+                            <motion.span 
+                                initial={{ scale: 0 }}
+                                animate={{ scale: 1 }}
+                                exit={{ scale: 0 }}
+                                className="absolute top-[5px] right-[5px] sm:top-1 sm:right-1 w-2 h-2 bg-statusRed rounded-full border border-midnight shadow-[0_0_5px_rgba(239,68,68,0.5)]" 
+                            />
+                            )}
+                        </AnimatePresence>
+                    </button>
 
-                        {/* GUARD: Desktop Profile Button */}
+                    {/* DESKTOP ONLY: Other Icons */}
+                    <div className={`flex items-center gap-2 transition-all duration-500 ease-in-out ${"absolute opacity-0 scale-90 pointer-events-none md:static md:opacity-100 md:scale-100 md:pointer-events-auto"}`}>
                         <button 
                             onClick={() => {
                                 if (effectivePathname !== '/app/profile') navigate('/app/profile');
@@ -202,25 +221,26 @@ export function StudentApp({ userEmail, theme, toggleTheme, showToast }: Props) 
                         >
                             <User size={18} />
                         </button>
-                        
                         <LanguageSwitcher />
                         <button onClick={toggleTheme} className="p-1.5 sm:p-2 rounded-lg text-textGrey hover:text-white hover:bg-white/10 transition-colors">{theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}</button>
                         <button onClick={() => signOut(auth)} className="p-1.5 sm:p-2 rounded-lg text-textGrey hover:text-statusRed hover:bg-statusRed/10 transition-colors"><LogOut size={18} /></button>
                     </div>
+
+                    {/* MOBILE ONLY: Hamburger Menu Toggle */}
                     <div className={`transition-all duration-500 ease-in-out ${"md:absolute md:opacity-0 md:scale-90 md:pointer-events-none opacity-100 scale-100"}`}>
                         <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 rounded-lg text-textGrey hover:bg-white/10 transition-colors">{isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}</button>
                     </div>
+
+                    {/* THE NOTIFICATION MENU */}
+                    <NotificationsMenu isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} isDark={isDark} buttonRef={notificationButtonRef} />
+
+                    {/* MOBILE ONLY: Dropdown Menu */}
                     {isMobileMenuOpen && (
                         <>
                             <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setIsMobileMenuOpen(false)} />
                             <div className={`absolute top-14 right-0 w-56 rounded-xl border shadow-2xl p-2 flex flex-col gap-1 z-50 md:hidden animate-in zoom-in-95 duration-200 origin-top-right ${cardColor}`}>
                                 <LanguageSwitcher isMobile />
                                 
-                                <button onClick={() => { setIsNotificationsOpen(true); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-bold transition-colors ${isDark ? 'text-textGrey hover:bg-white/10' : 'text-gray-600 hover:bg-black/5'}`}>
-                                    <Bell size={16} /> <span>Notifications</span>
-                                </button>
-                                
-                                {/* GUARD: Mobile Profile Button */}
                                 <button 
                                     onClick={() => { 
                                         if (effectivePathname !== '/app/profile') navigate('/app/profile'); 
@@ -255,8 +275,13 @@ export function StudentApp({ userEmail, theme, toggleTheme, showToast }: Props) 
                     <Routes location={backgroundLocation || location}>
                         <Route path="/" element={
                             <DashboardView 
-                              activeProfile={activeProfile} instructor={instructors[activeProfile?.teacherId]} lessons={lessons} 
-                              upcomingLessons={upcomingLessons} theme={theme} onCancelLesson={handleCancelClick}
+                              activeProfile={activeProfile} 
+                              instructor={instructors[activeProfile?.teacherId]} 
+                              lessons={lessons} 
+                              upcomingLessons={upcomingLessons} 
+                              theme={theme} 
+                              onCancelLesson={handleCancelClick}
+                              onOpenChat={() => setIsChatOpen(true)} // 3. ADDED: Pass the trigger down
                             />
                         } />
 
@@ -282,6 +307,17 @@ export function StudentApp({ userEmail, theme, toggleTheme, showToast }: Props) 
                 lessons={lessons} isDark={isDark} onCancelLesson={handleCancelClick} 
             />
         </main>
+
+        {/* 4. ADDED: The Modal! */}
+        <QuickChatModal 
+            isOpen={isChatOpen}
+            onClose={() => setIsChatOpen(false)}
+            // Force it to use the Teacher UID + Student Profile ID
+            activeChatId={activeProfile?.teacherId && activeProfile?.id ? [activeProfile.teacherId, activeProfile.id].sort().join('_') : ''}
+            receiverId={activeProfile?.teacherId || ''}
+            receiverName={activeInstructor?.name || 'Instructor'}
+            isDark={isDark}
+        />
     </div>
   );
 }

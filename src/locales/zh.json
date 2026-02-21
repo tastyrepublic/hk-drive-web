@@ -124,6 +124,9 @@
     "clearConfirm": "確定清除全部？",
     "emptyState": "暫無新通知",
     "reviewRequest": "查看請求",
-    "dismiss": "忽略"
+    "readConfirm": "全部標記為已讀？",
+    "dismiss": "忽略",
+    "cancelTitle": "課堂已取消",
+    "cancelMessage": "{{name}} 已取消 {{date}} 的課堂。"
   }
 }

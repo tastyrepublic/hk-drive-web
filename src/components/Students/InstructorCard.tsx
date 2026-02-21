@@ -5,11 +5,12 @@ import { GLOBAL_TRANSITION } from '../../constants/animations';
 
 interface Props {
   instructor: any;
-  isDark: boolean; 
   variants?: Variants;
+  // ADDED: The prop to trigger the chat window
+  onOpenChat?: () => void; 
 }
 
-export function InstructorCard({ instructor, variants }: Props) {
+export function InstructorCard({ instructor, variants, onOpenChat }: Props) {
   const { t } = useTranslation();
 
   // Professional Teal-Cyan Gradient
@@ -50,9 +51,9 @@ export function InstructorCard({ instructor, variants }: Props) {
             </div>
             
             <div className="flex items-center gap-2">
-                {/* Dummy In-App Message Button */}
+                {/* FIXED: Wired up your existing button to open the chat! */}
                 <button
-                    onClick={() => console.log('Future in-app messaging feature')}
+                    onClick={onOpenChat}
                     className="p-3 rounded-full transition-transform active:scale-95 flex items-center justify-center bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/20 shadow-sm"
                     title={t('common.message', 'In-App Message')}
                 >

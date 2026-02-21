@@ -124,6 +124,9 @@
     "clearConfirm": "Clear all?",
     "emptyState": "No new notifications",
     "reviewRequest": "Review Request",
-    "dismiss": "Dismiss"
+    "readConfirm": "Mark all as read?",
+    "dismiss": "Dismiss",
+    "cancelTitle": "Lesson Cancelled",
+    "cancelMessage": "{{name}} cancelled their lesson on {{date}} at {{time}}."
   }
 }

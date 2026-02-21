@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion'; 
 import { History } from 'lucide-react';
-import { useNavigate, useLocation } from 'react-router'; // <-- Added useLocation
+import { useNavigate, useLocation } from 'react-router'; 
 
 import { LIST_CONTAINER, CARD_VARIANTS } from '../../constants/animations'; 
 import { BalanceCard } from './BalanceCard';
@@ -16,12 +16,15 @@ interface Props {
   upcomingLessons: any[]; 
   theme: 'dark' | 'light';
   onCancelLesson: (id: string) => void;
+  // 1. ADDED: The new prop definition
+  onOpenChat: () => void; 
 }
 
-export function DashboardView({ activeProfile, instructor, lessons, upcomingLessons, theme, onCancelLesson }: Props) {
+// 2. ADDED: Destructure onOpenChat from Props
+export function DashboardView({ activeProfile, instructor, lessons, upcomingLessons, theme, onCancelLesson, onOpenChat }: Props) {
   const { t } = useTranslation();
   const navigate = useNavigate(); 
-  const location = useLocation(); // <-- We need this to freeze the background
+  const location = useLocation(); 
   
   const isDark = theme === 'dark';
   const cardColor = isDark ? 'bg-slate border-gray-800' : 'bg-white border-gray-200';
@@ -44,7 +47,6 @@ export function DashboardView({ activeProfile, instructor, lessons, upcomingLess
                 upcomingLessons={upcomingLessons} 
                 isDark={isDark} 
                 onCancelLesson={onCancelLesson} 
-                // Navigate to the modal URL, but pass the current dashboard location as the background
                 onOpenHistory={() => navigate('/app/history', { state: { backgroundLocation: location } })}
                 onBookLesson={() => navigate('/app/schedule')} 
                 variants={CARD_VARIANTS}
@@ -52,8 +54,8 @@ export function DashboardView({ activeProfile, instructor, lessons, upcomingLess
 
             <InstructorCard 
                 instructor={instructor} 
-                isDark={isDark}
                 variants={CARD_VARIANTS}
+                onOpenChat={onOpenChat} // 3. ADDED: Pass it down to the card!
             />
 
             {/* RECENT ACTIVITY */}

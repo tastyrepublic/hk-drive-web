@@ -1,14 +1,24 @@
+// 1. ADDED: useState
+import { auth } from '../../firebase';
+import { useState } from 'react';
 import { Plus, Users } from 'lucide-react';
 import { StudentCard } from './StudentCard';
+// 2. ADDED: Import the new modal
+import { QuickChatModal } from '../Modals/QuickChatModal';
 
 interface Props {
   students: any[];
   updateBalance: (id: string, newBalance: number) => void;
   openStudentModal: (stu?: any) => void;
-  onSendInvite: (student: any) => void; // <--- ADDED
+  onSendInvite: (student: any) => void; 
+  // 3. ADDED: isDark prop so the chat box matches your theme
+  isDark?: boolean; 
 }
 
-export function StudentsView({ students, updateBalance, openStudentModal, onSendInvite }: Props) {
+export function StudentsView({ students, updateBalance, openStudentModal, onSendInvite, isDark = true }: Props) {
+  // 4. ADDED: State to control the floating chat window
+  const [chatStudent, setChatStudent] = useState<any | null>(null);
+
   return (
     <div className="space-y-6 transition-all duration-300"> 
       <div className="flex justify-end">
@@ -28,7 +38,9 @@ export function StudentsView({ students, updateBalance, openStudentModal, onSend
               stu={stu} 
               updateBalance={updateBalance} 
               openStudentModal={openStudentModal} 
-              onSendInvite={onSendInvite} // <--- PASSED DOWN
+              onSendInvite={onSendInvite} 
+              // 5. ADDED: Pass the trigger down to the card
+              onOpenChat={() => setChatStudent(stu)} 
             />
           ))}
         </div>
@@ -49,6 +61,17 @@ export function StudentsView({ students, updateBalance, openStudentModal, onSend
           </button>
         </div>
       )}
+
+      {/* 6. ADDED: The Modal Component at the bottom of the view */}
+      <QuickChatModal 
+        isOpen={!!chatStudent}
+        onClose={() => setChatStudent(null)}
+        // Force it to use the Teacher UID + Student Profile ID
+        activeChatId={chatStudent && auth.currentUser ? [auth.currentUser.uid, chatStudent.id].sort().join('_') : ''}
+        receiverId={chatStudent?.id || ''}
+        receiverName={chatStudent?.name || ''}
+        isDark={!!isDark}
+      />
     </div>
   );
 }

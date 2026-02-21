@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { db, auth } from '../firebase';
-import { collection, query, where, onSnapshot, doc, runTransaction } from 'firebase/firestore'; 
+// --- ADDED: addDoc for creating notifications ---
+import { collection, query, where, onSnapshot, doc, runTransaction, addDoc } from 'firebase/firestore'; 
 
 export function useStudentData() {
   const [loading, setLoading] = useState(true);
@@ -75,17 +76,15 @@ export function useStudentData() {
     return () => unsub();
   }, [activeProfile?.id]); 
 
-  // 4. [UPDATED] Smart Filtering (Clean Version)
+  // 4. Smart Filtering
   const upcomingLessons = useMemo(() => {
     return lessons.filter(l => {
         if (!l.date || !l.time) return false;
         
         const now = new Date();
-        // Fallback to 60m if endTime is missing (safety only), but generally expects endTime
         const endTimeStr = l.endTime || new Date(new Date(`${l.date}T${l.time}`).getTime() + 60*60000).toTimeString().slice(0, 5);
         const lessonEnd = new Date(`${l.date}T${endTimeStr}`);
 
-        // Keep lesson visible until it strictly ENDS
         return now < lessonEnd && l.status === 'Booked';
     });
   }, [lessons]);
@@ -106,6 +105,11 @@ export function useStudentData() {
     setActionLoading(true);
 
     try {
+      // Variables to store details during the transaction
+      let teacherIdToNotify = '';
+      let cancelledDate = '';
+      let cancelledTime = '';
+
       await runTransaction(db, async (transaction) => {
         const slotRef = doc(db, "slots", lessonId);
         const studentRef = doc(db, "students", activeProfile.id);
@@ -122,17 +126,51 @@ export function useStudentData() {
             throw new Error("Unauthorized cancellation.");
         }
 
+        // Capture data for the notification payload
+        teacherIdToNotify = slotData.teacherId;
+        cancelledDate = slotData.date;
+        cancelledTime = slotData.time;
+
         // Clean Reset
         transaction.update(slotRef, {
             status: 'Open',
             studentId: null,
-            bookedBy: null // Clear the 'student'/'teacher' tag
+            bookedBy: null
         });
         
         transaction.update(studentRef, {
             balance: (studentData.balance || 0) + 1
         });
       });
+
+      // --- NEW: THE NOTIFICATION TRIGGER ---
+      // If the transaction succeeded, immediately send the notification to the teacher!
+      if (teacherIdToNotify) {
+        await addDoc(collection(db, 'notifications'), {
+            userId: teacherIdToNotify,      
+            type: 'cancellation',
+            
+            // 1. The Title (Fallback + i18n Key)
+            title: 'Lesson Cancelled',
+            titleKey: 'notifications.cancelTitle', 
+            
+            // 2. The Message (Fallback + i18n Key + Params)
+            message: `${activeProfile?.name || 'A student'} cancelled their lesson on ${cancelledDate} at ${cancelledTime}.`,
+            messageKey: 'notifications.cancelMessage', 
+            messageParams: { 
+                name: activeProfile?.name || 'A student', 
+                date: cancelledDate,
+                time: cancelledTime
+            },
+            
+            // 3. System Data
+            isRead: false,
+            createdAt: Date.now(),
+            relatedLessonId: lessonId,
+            relatedStudentId: activeProfile.id
+        });
+      }
+
       if (onSuccess) onSuccess();
     } catch (error: any) {
       console.error("Cancel Error:", error);

@@ -1,4 +1,4 @@
-import { Edit2, Phone, Car, MapPin, MessageCircle, Share2, CheckCircle2, Clock, Link2Off } from 'lucide-react';
+import { Edit2, Phone, Car, MapPin, MessageCircle, Share2, CheckCircle2, Clock, Link2Off, MessageSquare } from 'lucide-react';
 
 // --- CHANGE 1: Import Helpers to translate IDs to Text ---
 import { getVehicleLabel, getExamCenterLabel } from '../../constants/list';
@@ -8,9 +8,11 @@ interface Props {
   updateBalance: (id: string, newBalance: number) => void;
   openStudentModal: (stu: any) => void;
   onSendInvite: (student: any) => void;
+  // ADDED: The new prop to trigger the chat modal
+  onOpenChat?: () => void; 
 }
 
-export function StudentCard({ stu, updateBalance, openStudentModal, onSendInvite }: Props) {
+export function StudentCard({ stu, updateBalance, openStudentModal, onSendInvite, onOpenChat }: Props) {
   // 1. Determine Status
   const isLinked = !!stu.uid;
   const isPending = !isLinked && !!stu.inviteToken; 
@@ -101,7 +103,7 @@ export function StudentCard({ stu, updateBalance, openStudentModal, onSendInvite
             </button>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
           <div className="flex items-center gap-2 bg-midnight p-1 rounded-lg border border-gray-800">
             <button 
               onClick={() => updateBalance(stu.id, stu.balance - 1)} 
@@ -113,13 +115,26 @@ export function StudentCard({ stu, updateBalance, openStudentModal, onSendInvite
               className="w-7 h-7 rounded bg-slate border border-gray-700 hover:text-green-500 transition-colors"
             > + </button>
           </div>
+          
+          <div className="flex items-center gap-2">
+            {/* ADDED: The new Quick Chat Button */}
+            <button 
+              onClick={onOpenChat}
+              title="Quick Chat"
+              className="p-2 bg-midnight border border-gray-800 rounded-lg text-textGrey hover:text-orange hover:border-orange transition-all"
+            >
+              <MessageSquare size={16}/>
+            </button>
 
-          <button 
-            onClick={() => openStudentModal(stu)} 
-            className="p-2 bg-midnight border border-gray-800 rounded-lg text-textGrey hover:text-orange hover:border-orange transition-all"
-          >
-            <Edit2 size={16}/>
-          </button>
+            {/* Existing Edit Button */}
+            <button 
+              onClick={() => openStudentModal(stu)} 
+              title="Edit Student"
+              className="p-2 bg-midnight border border-gray-800 rounded-lg text-textGrey hover:text-orange hover:border-orange transition-all"
+            >
+              <Edit2 size={16}/>
+            </button>
+          </div>
         </div>
       </div>
     </div>

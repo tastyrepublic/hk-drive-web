@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { db, auth } from '../../firebase'; 
 import { signOut, type User } from 'firebase/auth';
 import { 
@@ -8,7 +8,7 @@ import {
 import { 
   LogOut, Sun, Moon, 
   Settings as SettingsIcon, Calendar, Users, CreditCard, 
-  Menu, X 
+  Menu, X, Bell, MessageSquare 
 } from 'lucide-react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -21,16 +21,20 @@ import { SettingsView } from '../Settings/SettingsView';
 import { EditLessonModal } from '../Modals/EditLessonModal';
 import { StudentFormModal } from '../Modals/StudentFormModal';
 import { ConfirmModal } from '../Modals/ConfirmModal';
+import { NotificationsMenu } from '../Notifications/NotificationsMenu';
+import { MessagesView } from '../Messages/MessagesView';
 
 // Hooks
 import { useLessonManager } from '../../hooks/useLessonManager';
 import { useStudentManager } from '../../hooks/useStudentManager';
+import { useNotifications } from '../../hooks/useNotifications';
+import { useMessages } from '../../hooks/useMessages';
 
 import { DEFAULT_VEHICLE_ID } from '../../constants/list';
 import { PAGE_VARIANTS, PAGE_TRANSITION } from '../../constants/animations';
 
 // --- TYPES ---
-type Tab = 'diary' | 'students' | 'payments' | 'settings';
+type Tab = 'diary' | 'students' | 'messages' | 'payments' | 'settings';
 type ToastType = 'success' | 'error';
 
 interface LessonForm {
@@ -61,9 +65,16 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
   const path = location.pathname;
   const activeTab = path.includes('/students') ? 'students' : 
                     path.includes('/payments') ? 'payments' : 
+                    path.includes('/messages') ? 'messages' : 
                     path.includes('/settings') ? 'settings' : 'diary';
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false); 
+  const notificationButtonRef = useRef<HTMLButtonElement>(null); 
+
+  // Segregated Unread Counts
+  const { unreadCount: unreadNotifs } = useNotifications(); 
+  const { unreadCount: unreadMessages } = useMessages(); 
 
   // STATE: DATA
   const [slots, setSlots] = useState<any[]>([]);
@@ -360,10 +371,11 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
             {/* Left: Current Tab Icon */}
             <div className="flex items-center gap-2 w-auto md:w-32 flex-shrink-0 justify-start">
                  <div className="bg-orange/10 p-2 rounded-lg border border-orange/20 flex-shrink-0 z-10 relative">
-                    {activeTab === 'diary' && <Calendar className="text-orange" size={18} />}
-                    {activeTab === 'students' && <Users className="text-orange" size={18} />}
-                    {activeTab === 'payments' && <CreditCard className="text-orange" size={18} />}
-                    {activeTab === 'settings' && <SettingsIcon className="text-orange" size={18} />}
+                    {activeTab === 'diary' && <Calendar className="text-orange" size={20} />}
+                    {activeTab === 'students' && <Users className="text-orange" size={20} />}
+                    {activeTab === 'messages' && <MessageSquare className="text-orange" size={20} />}
+                    {activeTab === 'payments' && <CreditCard className="text-orange" size={20} />}
+                    {activeTab === 'settings' && <SettingsIcon className="text-orange" size={20} />}
                  </div>
                  <div className={`overflow-hidden transition-all duration-500 ease-in-out flex flex-col justify-center ${"max-w-0 opacity-0 md:max-w-[150px] md:opacity-100"}`}>
                     <span className="capitalize font-bold text-white truncate pl-1 whitespace-nowrap">{activeTab}</span>
@@ -372,49 +384,85 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
 
             {/* Middle: Tab Navigation */}
             <nav className="flex bg-midnight rounded-lg p-1 border border-gray-800 z-10 relative">
-                {(['diary', 'students', 'payments'] as Tab[]).map(t => (
+                {(['diary', 'students', 'messages', 'payments'] as Tab[]).map(t => (
                   <button 
                     key={t} 
-                    // GUARD: Only navigate if it's a different tab
                     onClick={() => {
                         if (activeTab !== t) navigate(`/dashboard/${t}`);
                     }} 
-                    className={`px-3 sm:px-6 py-1.5 rounded-md text-[11px] sm:text-sm font-bold capitalize transition-all ${activeTab === t ? 'bg-orange text-white shadow-sm' : 'text-textGrey hover:text-orange'}`}
+                    className={`relative px-3 sm:px-6 py-1.5 rounded-md text-[11px] sm:text-sm font-bold capitalize transition-all ${activeTab === t ? 'bg-orange text-white shadow-sm' : 'text-textGrey hover:text-orange'}`}
                   >
                     {t}
+                    {t === 'messages' && unreadMessages > 0 && (
+                       <span className={`absolute top-1 right-2 w-2 h-2 bg-statusRed rounded-full shadow-[0_0_5px_rgba(239,68,68,0.5)]`} />
+                    )}
                   </button>
                 ))}
             </nav>
 
             {/* Right: Actions */}
-            <div className="flex items-center justify-end gap-1 sm:gap-2 w-auto md:w-32 flex-shrink-0 relative">
-                <div className={`flex items-center gap-2 transition-all duration-500 ease-in-out ${"absolute opacity-0 scale-90 pointer-events-none md:static md:opacity-100 md:scale-100 md:pointer-events-auto"}`}>
-                   {/* GUARD: Only navigate if not already on settings */}
+            <div className="flex items-center justify-end gap-1 sm:gap-2 w-auto flex-shrink-0 relative transition-all duration-500 ease-in-out">
+                
+                {/* ALWAYS VISIBLE: Bell Icon */}
+                <button 
+                    ref={notificationButtonRef} 
+                    onClick={() => setIsNotificationsOpen(!isNotificationsOpen)} 
+                    className="p-2 rounded-lg text-textGrey hover-bg-theme transition-all duration-500 ease-in-out relative flex-shrink-0"
+                >
+                    <Bell size={20} className="transition-all duration-500 ease-in-out" />
+                    
+                    <AnimatePresence>
+                        {unreadNotifs > 0 && (
+                        <motion.span 
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            exit={{ scale: 0 }}
+                            className="absolute top-1.5 right-1.5 w-2 h-2 bg-statusRed rounded-full border border-midnight shadow-[0_0_5px_rgba(239,68,68,0.5)] transition-all duration-500 ease-in-out" 
+                        />
+                        )}
+                    </AnimatePresence>
+                </button>
+
+                {/* DESKTOP ONLY: Other Icons */}
+                <div className="flex items-center gap-1 sm:gap-2 overflow-hidden transition-all duration-500 ease-in-out max-w-0 md:max-w-[160px] opacity-0 md:opacity-100 pointer-events-none md:pointer-events-auto">
                    <button 
                      onClick={() => {
                         if (activeTab !== 'settings') navigate('/dashboard/settings');
                      }} 
-                     className={`p-1.5 sm:p-2 rounded-lg ${activeTab === 'settings' ? 'text-orange bg-orange/10' : 'text-textGrey hover-bg-theme'}`}
+                     className={`p-2 rounded-lg transition-all duration-500 flex-shrink-0 ${activeTab === 'settings' ? 'text-orange bg-orange/10' : 'text-textGrey hover-bg-theme'}`}
                    >
-                     <SettingsIcon size={18} />
+                     <SettingsIcon size={20} className="transition-all duration-500" />
                    </button>
                    
-                   <button onClick={toggleTheme} className="p-1.5 sm:p-2 hover-bg-theme rounded-lg text-textGrey">{theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}</button>
-                   <button onClick={() => signOut(auth)} className="p-1.5 sm:p-2 hover-bg-theme rounded-lg text-textGrey"><LogOut size={18} /></button>
+                   <button onClick={toggleTheme} className="p-2 hover-bg-theme rounded-lg text-textGrey transition-all duration-500 flex-shrink-0">
+                       {theme === 'dark' ? <Sun size={20} className="transition-all duration-500" /> : <Moon size={20} className="transition-all duration-500" />}
+                   </button>
+                   <button onClick={() => signOut(auth)} className="p-2 hover-bg-theme rounded-lg text-textGrey transition-all duration-500 flex-shrink-0">
+                       <LogOut size={20} className="transition-all duration-500" />
+                   </button>
                 </div>
                 
-                {/* Mobile Menu Toggle */}
-                <div className={`transition-all duration-500 ease-in-out ${"md:absolute md:opacity-0 md:scale-90 md:pointer-events-none opacity-100 scale-100"}`}>
-                   <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 hover-bg-theme rounded-lg text-textGrey transition-colors">{isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}</button>
+                {/* MOBILE ONLY: Menu Toggle */}
+                <div className="flex items-center justify-end overflow-hidden transition-all duration-500 ease-in-out max-w-[50px] md:max-w-0 opacity-100 md:opacity-0 pointer-events-auto md:pointer-events-none">
+                   <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 hover-bg-theme rounded-lg text-textGrey transition-colors flex-shrink-0">
+                       {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+                   </button>
                 </div>
 
-                {/* Mobile Menu Dropdown */}
+                {/* THE NOTIFICATION MENU */}
+                <NotificationsMenu 
+                    isOpen={isNotificationsOpen} 
+                    onClose={() => setIsNotificationsOpen(false)} 
+                    isDark={theme === 'dark'} 
+                    buttonRef={notificationButtonRef} 
+                />
+
+                {/* MOBILE ONLY: Dropdown Menu */}
                 {isMobileMenuOpen && (
                   <>
                     <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setIsMobileMenuOpen(false)} />
                     <div className="absolute top-14 right-0 w-48 bg-slate border border-gray-800 rounded-xl shadow-2xl p-2 flex flex-col gap-1 z-50 md:hidden animate-in zoom-in-95 duration-200 origin-top-right">
                        
-                       {/* GUARD: Mobile settings button */}
                        <button 
                          onClick={() => { 
                             if (activeTab !== 'settings') navigate('/dashboard/settings'); 
@@ -482,6 +530,10 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
                         />
                     } />
 
+                    {/* ADDED: The new Messages Route */}
+<Route path="/messages" element={
+                        <MessagesView isDark={theme === 'dark'} students={students} />
+                    } />
                     <Route path="/payments" element={<PaymentsView studentCount={students.length} />} />
                     
                     <Route path="/settings/*" element={

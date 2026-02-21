@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { db, auth } from '../firebase';
-import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, writeBatch } from 'firebase/firestore';
+// --- ADDED: orderBy and limit ---
+import { collection, query, where, orderBy, limit, onSnapshot, doc, updateDoc, writeBatch } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
 import type { AppNotification } from '../constants';
 
 export function useNotifications() {
@@ -8,36 +10,44 @@ export function useNotifications() {
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    const user = auth.currentUser;
-    if (!user) return;
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        setNotifications([]);
+        setUnreadCount(0);
+        return;
+      }
 
-    // Listen for all notifications for the logged-in user, ordered by newest first
-    const q = query(
-      collection(db, 'notifications'),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc')
-    );
+      // --- THE ENTERPRISE FIX: Server-side sorting with a strict limit ---
+      const q = query(
+        collection(db, 'notifications'),
+        where('userId', '==', user.uid),
+        orderBy('createdAt', 'desc'),
+        limit(50) // Only fetch the 50 most recent!
+      );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const notifs: AppNotification[] = [];
-      let unread = 0;
+      const unsubscribeDocs = onSnapshot(q, (snapshot) => {
+        const notifs: AppNotification[] = [];
+        let unread = 0;
 
-      snapshot.forEach((doc) => {
-        const data = doc.data() as Omit<AppNotification, 'id'>;
-        if (!data.isRead) unread++;
-        notifs.push({ id: doc.id, ...data });
+        snapshot.forEach((doc) => {
+          const data = doc.data() as Omit<AppNotification, 'id'>;
+          if (!data.isRead) unread++;
+          notifs.push({ id: doc.id, ...data });
+        });
+
+        // We don't need to sort in JavaScript anymore, Firebase did it!
+        setNotifications(notifs);
+        setUnreadCount(unread);
+      }, (error) => {
+        console.error("Firebase Snapshot Error:", error.message);
       });
 
-      setNotifications(notifs);
-      setUnreadCount(unread);
+      return () => unsubscribeDocs();
     });
 
-    return () => unsubscribe();
+    return () => unsubscribeAuth();
   }, []);
 
-  // --- ACTIONS ---
-
-  // Mark a single notification as read
   const markAsRead = async (id: string) => {
     try {
       await updateDoc(doc(db, 'notifications', id), { isRead: true });
@@ -46,27 +56,32 @@ export function useNotifications() {
     }
   };
 
-  // Mark all notifications as read at once
   const markAllAsRead = async () => {
     try {
       const batch = writeBatch(db);
       const unreadNotifs = notifications.filter(n => !n.isRead);
-      
       unreadNotifs.forEach(n => {
         const notifRef = doc(db, 'notifications', n.id);
         batch.update(notifRef, { isRead: true });
       });
-
       await batch.commit();
     } catch (error) {
       console.error("Error marking all as read:", error);
     }
   };
 
-  return {
-    notifications,
-    unreadCount,
-    markAsRead,
-    markAllAsRead
+  const clearAllNotifications = async () => {
+    try {
+      const batch = writeBatch(db);
+      notifications.forEach(n => {
+        const notifRef = doc(db, 'notifications', n.id);
+        batch.delete(notifRef);
+      });
+      await batch.commit();
+    } catch (error) {
+      console.error("Error clearing notifications:", error);
+    }
   };
+
+  return { notifications, unreadCount, markAsRead, markAllAsRead, clearAllNotifications };
 }
