@@ -73,8 +73,11 @@ export function ChatBox({ activeChatId, receiverId, receiverName, isDark, onBack
 
       {/* 3. The Text Area & Attachments */}
       <ChatInput 
-        onSendMessage={(text) => sendMessage(receiverId, text, replyingTo)}
-        onSendAttachment={(file, onProgress) => sendAttachment(receiverId, file, replyingTo, onProgress)}
+  onSendMessage={(text) => sendMessage(receiverId, text, replyingTo)}
+  onSendAttachment={async (fileData, text) => {
+    // We call a new helper or the existing one with the pre-uploaded URL
+    await sendAttachment(receiverId, fileData.url, text, fileData.name, fileData.type, replyingTo);
+  }}        
         replyingTo={replyingTo}
         setReplyingTo={setReplyingTo}
         receiverName={receiverName}
