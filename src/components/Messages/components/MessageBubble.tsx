@@ -15,7 +15,9 @@ interface MessageBubbleProps {
   setReplyingTo: (msg: any) => void;
   deleteForEveryone: (id: string, fileUrl?: string) => void;
   deleteForMe: (id: string) => void;
-  animateEntrance: boolean;
+  isDeleting: boolean;
+  onJumpToReply: (id: string) => void; // <- Added this
+  isHighlighted: boolean;
 }
 
 const DELETE_TIME_LIMIT = 60 * 60 * 1000; 
@@ -41,7 +43,9 @@ const getDateDividerLabel = (timestamp: number | null | undefined, t: any) => {
 export function MessageBubble({ 
   msg, prevMsg, receiverName, isDark, 
   activeMenuId, setActiveMenuId, setReplyingTo, deleteForEveryone, deleteForMe,
-  animateEntrance 
+  isDeleting,
+  onJumpToReply,
+  isHighlighted
 }: MessageBubbleProps) {
   const { t } = useTranslation();
   
@@ -65,128 +69,126 @@ export function MessageBubble({
     setActiveMenuId(isMenuOpen ? null : msg.id);
   };
 
+  if (isDeletedForMe) return null;
+
   return (
-    <AnimatePresence>
-      {!isDeletedForMe && (
-        <motion.div 
-          initial={animateEntrance ? { opacity: 0, scale: 0.75, transformOrigin: isMine ? 'bottom right' : 'bottom left' } : false}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.9 }}
-          transition={{ type: "spring", bounce: 0.4, duration: 0.4 }}
-          className="flex flex-col w-full relative"
-        >
-          {showDateDivider && (
-            <div className="flex justify-center my-4">
-               <span className="text-[10px] font-bold uppercase px-3 py-1 rounded-full bg-gray-200 dark:bg-slate text-gray-500">
-                 {getDateDividerLabel(msg.createdAt, t)}
-               </span>
-            </div>
-          )}
-
-          <div className={`flex w-full ${isMine ? 'justify-end' : 'justify-start'} ${isPrevSame ? 'mt-1' : 'mt-4'}`}>
-            <div ref={refs.setReference} className="relative group max-w-[80%]">
-              
-              <motion.div 
-                layout
-                transition={{ layout: { type: "spring", bounce: 0.15, duration: 0.5 } }}
-                /* UPDATED SHAPE:
-                   - Main corners: rounded-[12px] (sharper/smaller)
-                   - Tail corner: rounded-br/bl-[2px] (extra sharp)
-                */
-                className={`py-2 px-4 shadow-sm overflow-hidden 
-                  ${isMine 
-                    ? 'rounded-[12px] rounded-br-[2px] bg-primary text-white' 
-                    : 'rounded-[12px] rounded-bl-[2px] bg-white dark:bg-slate border ' + borderTheme
-                  }`}
-              >
-                <AnimatePresence mode="popLayout">
-                  {msg.isDeleted ? (
-                    <div key="deleted" className="flex items-center gap-1 opacity-50 italic text-sm">
-                      <Ban size={14}/> {t('chat.deletedMessage', 'This message was removed')}
-                    </div>
-                  ) : (
-                    <motion.div 
-                      key="content"
-                      initial={animateEntrance ? { opacity: 0 } : false} 
-                      animate={{ opacity: 1 }} 
-                    >
-                      {/* NEW REPLY STYLE: Modern inset look with original rounded corners */}
-                      {msg.replyTo && !msg.isDeleted && (
-                        <div className="relative mb-2 px-3 py-2 rounded bg-black/10 dark:bg-white/10 text-xs overflow-hidden">
-                          <div className={`absolute left-0 top-0 bottom-0 w-1 ${isMine ? 'bg-white/60' : 'bg-primary/80'}`} />
-                          <span className="font-semibold tracking-wide block opacity-90">
-                            {msg.replyTo.senderId === auth.currentUser?.uid ? 'You' : receiverName}
-                          </span>
-                          <span className="truncate block opacity-75 mt-0.5">{msg.replyTo.text || 'File'}</span>
-                        </div>
-                      )}
-
-                      <div className="flex flex-col gap-1">
-                        {msg.fileUrl && (
-                          msg.fileType?.startsWith('image/') 
-                            ? <img src={msg.fileUrl} alt="attachment" className="max-w-full rounded-lg mt-1 min-h-[120px] bg-black/10 object-cover" />
-                            : (
-                              /* NEW FILE STYLE: Modern inset look */
-                              <a href={msg.fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 mt-1 rounded bg-black/10 dark:bg-white/10 hover:bg-black/20 transition-colors group/file relative pr-8">
-                                <div className={`p-2 rounded-lg ${isMine ? 'bg-white/20' : 'bg-primary/10 text-primary'}`}><FileText size={20}/></div>
-                                <div className="flex flex-col overflow-hidden">
-                                  <span className="text-sm font-medium truncate max-w-[150px]">{msg.fileName || 'Document'}</span>
-                                  <span className="text-[10px] opacity-60 uppercase font-bold">{msg.fileType?.split('/')[1] || 'File'}</span>
-                                </div>
-                                <Download size={14} className="ml-auto opacity-40" />
-                              </a>
-                            )
-                        )}
-                        {msg.text && <span className="whitespace-pre-wrap break-words break-all">{msg.text}</span>}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-                
-                {/* Fixed-width timestamp container */}
-                <div className="flex justify-end items-center gap-1 mt-1 opacity-60 text-[10px]">
-                  <span>{formatTime(msg.createdAt)}</span>
-                  {isMine && (
-                    <div className="w-4 flex justify-end">
-                      {(!msg.createdAt || msg.isPending) ? <Clock size={10} /> : msg.isRead ? <CheckCheck size={12} className="text-blue-400" /> : <Check size={12} />}
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-
-              {/* 2. OVERLAP BUTTON: Positioned absolute so it takes 0px space */}
-              {!msg.isDeleted && (
-                <button 
-                  onClick={handleMenuToggle} 
-                  className={`absolute top-1.5 right-1.5 p-1 rounded-full backdrop-blur-md transition-opacity z-10 
-                    ${isMine ? 'bg-primary/80 text-white' : 'bg-white/80 dark:bg-slate-800/80'} 
-                    ${isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-                >
-                  <ChevronDown size={14}/>
-                </button>
-              )}
-
-              {createPortal(
-                <AnimatePresence>
-                  {isMenuOpen && (
-                    <div ref={refs.setFloating} style={{ ...floatingStyles, zIndex: 9999 }}>
-                      <motion.div 
-                        initial={{ opacity: 0, scale: 0.95, y: -5 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: -5 }}
-                        className={`w-36 rounded-xl shadow-2xl border ${isDark ? 'bg-[#1e293b] border-gray-700' : 'bg-white border-gray-200'} overflow-hidden`}
-                      >
-                         <button onClick={() => { setReplyingTo(msg); setActiveMenuId(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-black/5 transition-colors">Reply</button>
-                         {canDeleteAll && <button onClick={() => { deleteForEveryone(msg.id, msg.fileUrl); setActiveMenuId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors font-medium">Delete for all</button>}
-                         <button onClick={() => { deleteForMe(msg.id); setActiveMenuId(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-black/5 transition-colors">Delete for me</button>
-                      </motion.div>
-                    </div>
-                  )}
-                </AnimatePresence>,
-                document.body
-              )}
-            </div>
-          </div>
-        </motion.div>
+    <>
+      {/* 1. DATE DIVIDER MOVED OUTSIDE: It will no longer fade out when deleting a message */}
+      {showDateDivider && (
+        <div className="flex justify-center my-4">
+            <span className="text-[10px] font-bold uppercase px-3 py-1 rounded-full bg-gray-200 dark:bg-slate text-gray-500">
+              {getDateDividerLabel(msg.createdAt, t)}
+            </span>
+        </div>
       )}
-    </AnimatePresence>
+
+      {/* 2. ONLY THE BUBBLE FADES NOW */}
+      <motion.div 
+        animate={isDeleting ? { opacity: 0, scale: 0.95 } : { opacity: 1, scale: 1 }}
+        transition={{ duration: 0.15, ease: "easeOut" }}
+        className="flex flex-col w-full relative py-1.5" 
+      >
+        <div className={`flex w-full ${isMine ? 'justify-end' : 'justify-start'} ${isPrevSame ? 'mt-1' : 'mt-4'}`}>
+          <div ref={refs.setReference} className="relative group max-w-[80%]">
+            
+            <div className={`py-2 px-4 shadow-sm overflow-hidden transition-all duration-500
+              ${isMine 
+                ? `rounded-[12px] rounded-br-[2px] bg-primary text-white ${
+                    // Highlights YOUR messages with a bright pop and a soft white ring
+                    isHighlighted ? 'brightness-110 scale-[1.02] shadow-md ring-2 ring-white/50' : ''
+                  }` 
+                : `rounded-[12px] rounded-bl-[2px] border ${borderTheme} ${
+                    // Highlights THEIR messages using your exact theme's primary color at low opacity
+                    isHighlighted 
+                      ? (isDark 
+                          ? 'bg-primary/20 scale-[1.02] shadow-md ring-2 ring-primary/50' 
+                          : 'bg-primary/10 scale-[1.02] shadow-md ring-2 ring-primary/30') 
+                      : 'bg-white dark:bg-slate'
+                  }`
+              }`}
+            >
+              <AnimatePresence mode="popLayout">
+                {msg.isDeleted ? (
+                  <div key="deleted" className="flex items-center gap-1 opacity-50 italic text-sm">
+                    <Ban size={14}/> {t('chat.deletedMessage', 'This message was removed')}
+                  </div>
+                ) : (
+                  <div key="content">
+                    {msg.replyTo && !msg.isDeleted && (
+                      <button 
+                        onClick={() => onJumpToReply(msg.replyTo.id)}
+                        className="w-full text-left relative mb-2 px-3 py-2 rounded bg-black/10 dark:bg-white/10 text-xs overflow-hidden hover:bg-black/20 dark:hover:bg-white/20 transition-colors cursor-pointer"
+                      >
+                        <div className={`absolute left-0 top-0 bottom-0 w-1 ${isMine ? 'bg-white/60' : 'bg-primary/80'}`} />
+                        <span className="font-semibold tracking-wide block opacity-90">
+                          {msg.replyTo.senderId === auth.currentUser?.uid ? 'You' : receiverName}
+                        </span>
+                        <span className="truncate block opacity-75 mt-0.5">{msg.replyTo.text || 'File'}</span>
+                      </button>
+                    )}
+
+                    <div className="flex flex-col gap-1">
+                      {msg.fileUrl && (
+                        msg.fileType?.startsWith('image/') 
+                          ? <img src={msg.fileUrl} alt="attachment" className="max-w-full rounded-lg mt-1 min-h-[120px] bg-black/10 object-cover" />
+                          : (
+                            <a href={msg.fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 mt-1 rounded bg-black/10 dark:bg-white/10 hover:bg-black/20 transition-colors group/file relative pr-8">
+                              <div className={`p-2 rounded-lg ${isMine ? 'bg-white/20' : 'bg-primary/10 text-primary'}`}><FileText size={20}/></div>
+                              <div className="flex flex-col overflow-hidden">
+                                <span className="text-sm font-medium truncate max-w-[150px]">{msg.fileName || 'Document'}</span>
+                                <span className="text-[10px] opacity-60 uppercase font-bold">{msg.fileType?.split('/')[1] || 'File'}</span>
+                              </div>
+                              <Download size={14} className="ml-auto opacity-40" />
+                            </a>
+                          )
+                      )}
+                      {msg.text && <span className="whitespace-pre-wrap break-words break-all">{msg.text}</span>}
+                    </div>
+                  </div>
+                )}
+              </AnimatePresence>
+              
+              <div className="flex justify-end items-center gap-1 mt-1 opacity-60 text-[10px]">
+                <span>{formatTime(msg.createdAt)}</span>
+                {isMine && (
+                  <div className="w-4 flex justify-end">
+                    {(!msg.createdAt || msg.isPending) ? <Clock size={10} /> : msg.isRead ? <CheckCheck size={12} className="text-blue-400" /> : <Check size={12} />}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {!msg.isDeleted && (
+              <button 
+                onClick={handleMenuToggle} 
+                className={`absolute top-1.5 right-1.5 p-1 rounded-full backdrop-blur-md transition-opacity z-10 
+                  ${isMine ? 'bg-primary/80 text-white' : 'bg-white/80 dark:bg-slate-800/80'} 
+                  ${isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+              >
+                <ChevronDown size={14}/>
+              </button>
+            )}
+
+            {createPortal(
+              <AnimatePresence>
+                {isMenuOpen && (
+                  <div ref={refs.setFloating} style={{ ...floatingStyles, zIndex: 9999 }}>
+                    <motion.div 
+                      initial={{ opacity: 0, scale: 0.95, y: -5 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: -5 }}
+                      className={`w-36 rounded-xl shadow-2xl border ${isDark ? 'bg-[#1e293b] border-gray-700' : 'bg-white border-gray-200'} overflow-hidden`}
+                    >
+                        <button onClick={() => { setReplyingTo(msg); setActiveMenuId(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-black/5 transition-colors">Reply</button>
+                        {canDeleteAll && <button onClick={() => { deleteForEveryone(msg.id, msg.fileUrl); setActiveMenuId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors font-medium">Delete for all</button>}
+                        <button onClick={() => { deleteForMe(msg.id); setActiveMenuId(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-black/5 transition-colors">Delete for me</button>
+                    </motion.div>
+                  </div>
+                )}
+              </AnimatePresence>,
+              document.body
+            )}
+          </div>
+        </div>
+      </motion.div>
+    </>
   );
 }

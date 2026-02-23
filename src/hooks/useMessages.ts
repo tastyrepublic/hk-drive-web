@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { getStorage, ref, deleteObject } from 'firebase/storage';
 import { db, auth } from '../firebase'; 
 import { 
   collection, 
@@ -36,7 +37,8 @@ export function useMessages(activeChatId?: string) {
           createdAt: data.createdAt?.toMillis ? data.createdAt.toMillis() : Date.now(),
           isPending: doc.metadata.hasPendingWrites 
         };
-      });
+        }).filter((m: any) => !m.deletedFor?.includes(auth.currentUser?.uid));
+    
       setMessages(loaded);
       
       const unread = loaded.filter(m => !m.isRead && m.receiverId === auth.currentUser?.uid).length;
@@ -121,8 +123,27 @@ export function useMessages(activeChatId?: string) {
     });
   };
 
-  const deleteForEveryone = async (messageId: string) => {
-    await updateDoc(doc(db, 'messages', messageId), { isDeleted: true });
+  const deleteForEveryone = async (messageId: string, fileUrl?: string) => {
+    try {
+      // 1. Mark as deleted and wipe the actual data from Firestore so it isn't taking up space
+      await updateDoc(doc(db, 'messages', messageId), { 
+        isDeleted: true,
+        text: null,
+        fileUrl: null,
+        fileName: null,
+        fileType: null
+      });
+
+      // 2. If this message had a file, physically delete it from your Firebase Storage bucket
+      if (fileUrl) {
+        const storage = getStorage();
+        const fileRef = ref(storage, fileUrl);
+        await deleteObject(fileRef);
+        console.log("File successfully deleted from Firebase Storage!");
+      }
+    } catch (error) {
+      console.error("Error deleting message or file:", error);
+    }
   };
 
   return { 

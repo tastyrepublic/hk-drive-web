@@ -14,7 +14,7 @@ interface MessageListProps {
   setReplyingTo: (msg: any) => void;
   deleteForEveryone: (id: string, fileUrl?: string) => void;
   deleteForMe: (id: string) => void;
-  markAsRead: (id: string) => void; // Prop is now used below!
+  markAsRead: (id: string) => void;
 }
 
 export function MessageList({
@@ -26,31 +26,49 @@ export function MessageList({
   const [showJumpButton, setShowJumpButton] = useState(false);
   const snapshotIdsRef = useRef<Set<string>>(new Set());
 
-  // Initialize or Update snapshot
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+
+  // 2. ADD THIS NEW FUNCTION: To scroll and highlight
+  const handleJumpToReply = (targetId: string) => {
+    const targetIndex = messages.findIndex(m => m.id === targetId);
+    if (targetIndex !== -1 && virtuosoRef.current) {
+      virtuosoRef.current.scrollToIndex({
+        index: targetIndex,
+        align: 'center', 
+        behavior: 'smooth'
+      });
+      setHighlightedId(targetId);
+      setTimeout(() => setHighlightedId(null), 1500);
+    }
+  };
+
+  // Lightning-fast 150ms timeout to allow the fade out before the layout snaps
+  const handleLocalDeleteForMe = (id: string) => {
+    setDeletingIds(prev => new Set(prev).add(id)); 
+    setTimeout(() => {
+      deleteForMe(id); 
+    }, 150); 
+  };
+
   useEffect(() => {
     if (snapshotIdsRef.current.size === 0 && messages.length > 0) {
       snapshotIdsRef.current = new Set(messages.map(m => m.id));
     }
   }, []);
 
-  // SCROLL LOGIC: Hand-tuned for "Send Only" scrolling
   useEffect(() => {
     if (messages.length > 0) {
       const lastMsg = messages[messages.length - 1];
       const isMine = lastMsg.senderId === auth.currentUser?.uid;
       const isNew = !snapshotIdsRef.current.has(lastMsg.id);
 
-      // Force scroll only if I sent it AND it's a new ID (not a deletion update)
       if (isMine && isNew) {
         setTimeout(() => {
-          virtuosoRef.current?.scrollToIndex({
-            index: messages.length - 1,
-            behavior: 'smooth',
-          });
+          virtuosoRef.current?.scrollToIndex({ index: messages.length - 1, behavior: 'smooth' });
         }, 100);
       }
-
-      // Update snapshot for next render
       snapshotIdsRef.current = new Set(messages.map(m => m.id));
     }
   }, [messages.length]); 
@@ -60,8 +78,8 @@ export function MessageList({
       <Virtuoso
         ref={virtuosoRef}
         data={messages}
-        className="custom-scrollbar"
-        style={{ height: '100%', width: '100%' }}
+        className="custom-scrollbar overflow-y-scroll"
+        style={{ height: '100%', width: '100%', scrollbarGutter: 'stable' }}
         initialTopMostItemIndex={messages.length - 1}
         followOutput={(isAtBottom) => isAtBottom ? 'smooth' : false}
         atBottomThreshold={150}
@@ -70,23 +88,20 @@ export function MessageList({
         atBottomStateChange={(atBottom) => setShowJumpButton(!atBottom)}
         
         components={{
-          // Header adds space at the very top of the chat history
           Header: () => <div className="h-4" />,
-          // Footer adds that "room" you want at the bottom
           Footer: () => <div className="h-12" /> 
         }}
         
         itemContent={(index, msg) => {
           const prevMsg = index > 0 ? messages[index - 1] : undefined;
-          const animateEntrance = !snapshotIdsRef.current.has(msg.id);
+          const isDeleting = deletingIds.has(msg.id);
 
-          // Mark as read when the message is rendered (visible)
           if (!msg.isRead && msg.senderId !== auth.currentUser?.uid) {
             markAsRead(msg.id);
           }
 
           return (
-            <div className="px-4 py-1.5 flex flex-col">
+            <div className="px-4 flex flex-col w-full">
               <MessageBubble 
                 msg={msg}
                 prevMsg={prevMsg}
@@ -96,8 +111,10 @@ export function MessageList({
                 setActiveMenuId={setActiveMenuId}
                 setReplyingTo={setReplyingTo}
                 deleteForEveryone={deleteForEveryone}
-                deleteForMe={deleteForMe}
-                animateEntrance={animateEntrance} 
+                deleteForMe={handleLocalDeleteForMe}
+                isDeleting={isDeleting} 
+                onJumpToReply={handleJumpToReply}
+                isHighlighted={highlightedId === msg.id}
               />
             </div>
           );
