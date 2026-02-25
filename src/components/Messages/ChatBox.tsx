@@ -24,9 +24,10 @@ export function ChatBox({ activeChatId, receiverId, receiverName, isDark, onBack
   const [replyingTo, setReplyingTo] = useState<any | null>(null);
   
   const { 
-    messages, 
+    messages,
+    isLoading, 
     sendMessage, 
-    sendAttachment, 
+    sendAttachments, 
     markAsRead, 
     deleteForMe, 
     deleteForEveryone 
@@ -47,8 +48,9 @@ export function ChatBox({ activeChatId, receiverId, receiverName, isDark, onBack
 
   return (
     <div 
-      onClick={() => setActiveMenuId(null)} // <-- Add this
-      className={`flex-1 flex flex-col h-full rounded-xl border overflow-hidden ${bgTheme} ${borderTheme}`}
+      onClick={() => setActiveMenuId(null)} 
+      // ADD min-w-0 RIGHT HERE:
+      className={`flex-1 min-w-0 flex flex-col h-full rounded-xl border overflow-hidden ${bgTheme} ${borderTheme}`}
     >
 
       {/* 1. The Top Bar */}
@@ -61,6 +63,7 @@ export function ChatBox({ activeChatId, receiverId, receiverName, isDark, onBack
       {/* 2. The Virtualized Message Area */}
       <MessageList 
         messages={messages}
+        isLoading={isLoading}
         receiverName={receiverName}
         isDark={isDark}
         activeMenuId={activeMenuId}
@@ -73,11 +76,14 @@ export function ChatBox({ activeChatId, receiverId, receiverName, isDark, onBack
 
       {/* 3. The Text Area & Attachments */}
       <ChatInput 
-  onSendMessage={(text) => sendMessage(receiverId, text, replyingTo)}
-  onSendAttachment={async (fileData, text) => {
-    // We call a new helper or the existing one with the pre-uploaded URL
-    await sendAttachment(receiverId, fileData.url, text, fileData.name, fileData.type, replyingTo);
-  }}        
+        onSendMessage={(text) => sendMessage(receiverId, text, replyingTo)}
+        
+        // --- NEW MULTI-FILE UPLOAD LOGIC ---
+        onSendAttachment={async (attachments, text) => {
+          // Pass the entire array of attachments directly to your hook
+          await sendAttachments(receiverId, attachments, text, replyingTo); 
+        }}        
+        
         replyingTo={replyingTo}
         setReplyingTo={setReplyingTo}
         receiverName={receiverName}

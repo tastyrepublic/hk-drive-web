@@ -2,6 +2,7 @@ import { Edit2, Phone, Car, MapPin, MessageCircle, Share2, CheckCircle2, Clock, 
 
 // --- CHANGE 1: Import Helpers to translate IDs to Text ---
 import { getVehicleLabel, getExamCenterLabel } from '../../constants/list';
+import { Avatar } from '../Shared/Avatar';
 
 interface Props {
   stu: any;
@@ -9,10 +10,11 @@ interface Props {
   openStudentModal: (stu: any) => void;
   onSendInvite: (student: any) => void;
   // ADDED: The new prop to trigger the chat modal
-  onOpenChat?: () => void; 
+  onOpenChat?: () => void;
+  isDark?: boolean;
 }
 
-export function StudentCard({ stu, updateBalance, openStudentModal, onSendInvite, onOpenChat }: Props) {
+export function StudentCard({ stu, updateBalance, openStudentModal, onSendInvite, onOpenChat, isDark }: Props) {
   // 1. Determine Status
   const isLinked = !!stu.uid;
   const isPending = !isLinked && !!stu.inviteToken; 
@@ -34,9 +36,7 @@ export function StudentCard({ stu, updateBalance, openStudentModal, onSendInvite
       {/* Top Section: Profile & Status */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-full bg-midnight border border-gray-700 flex items-center justify-center text-orange font-bold text-xl flex-shrink-0">
-            {stu.name.charAt(0).toUpperCase()}
-          </div>
+          <Avatar name={stu.name} size="lg" isDark={isDark} />
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-bold text-lg text-white">{stu.name}</h3>

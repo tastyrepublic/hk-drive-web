@@ -41,6 +41,7 @@ export function StudentsView({ students, updateBalance, openStudentModal, onSend
               onSendInvite={onSendInvite} 
               // 5. ADDED: Pass the trigger down to the card
               onOpenChat={() => setChatStudent(stu)} 
+              isDark={isDark}
             />
           ))}
         </div>

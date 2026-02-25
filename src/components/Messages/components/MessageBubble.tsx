@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, CheckCheck, Clock, Ban, ChevronDown, FileText, Download } from 'lucide-react';
+import { Check, CheckCheck, Clock, Ban, ChevronDown, FileText, Download, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { auth } from '../../../firebase';
 import { useFloating, offset, flip, shift } from '@floating-ui/react';
@@ -13,10 +14,10 @@ interface MessageBubbleProps {
   activeMenuId: string | null;
   setActiveMenuId: (id: string | null) => void;
   setReplyingTo: (msg: any) => void;
-  deleteForEveryone: (id: string, fileUrl?: string) => void;
+  deleteForEveryone: (id: string, attachments?: any[]) => void;
   deleteForMe: (id: string) => void;
   isDeleting: boolean;
-  onJumpToReply: (id: string) => void; // <- Added this
+  onJumpToReply: (id: string) => void;
   isHighlighted: boolean;
 }
 
@@ -40,6 +41,49 @@ const getDateDividerLabel = (timestamp: number | null | undefined, t: any) => {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
 };
 
+// --- NEW PRO COMPONENT DEFINED OUTSIDE ---
+const ImageAttachment = ({ url, thumbnail, isSingle, onClick, onDownload, fileName }: any) => {
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  return (
+    <div 
+      onClick={onClick}
+      className="relative group overflow-hidden rounded-lg bg-black/10 cursor-pointer"
+    >
+      {/* 1. THE PRO THUMBNAIL: Renders instantly from Firestore text data */}
+      {thumbnail && (
+        <img 
+          src={thumbnail} 
+          alt="blur" 
+          className={`absolute inset-0 w-full h-full object-cover blur-md scale-110 ${isSingle ? 'max-h-[280px]' : 'h-[140px]'}`} 
+        />
+      )}
+      
+      {/* 2. THE HIGH-RES IMAGE: Fades in smoothly over the thumbnail when ready */}
+      <img 
+        src={url} 
+        alt="attachment" 
+        onLoad={() => setIsLoaded(true)}
+        className={`relative z-10 w-full object-cover block transition-opacity duration-500 ${
+          isLoaded ? 'opacity-100' : 'opacity-0'
+        } ${isSingle ? 'h-auto max-h-[280px]' : 'h-[140px]'}`} 
+      />
+      
+      {/* Hover Download Button */}
+      <div className="absolute inset-0 z-20 bg-black/0 group-hover:bg-black/20 transition-all flex items-end justify-end p-2 opacity-0 group-hover:opacity-100">
+        <button
+          onClick={(e) => onDownload(e, url, fileName)}
+          className="p-1.5 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md transition-all shadow-sm"
+          title="Download Image"
+        >
+          <Download size={14} />
+        </button>
+      </div>
+    </div>
+  );
+};
+// ------------------------------------------
+
 export function MessageBubble({ 
   msg, prevMsg, receiverName, isDark, 
   activeMenuId, setActiveMenuId, setReplyingTo, deleteForEveryone, deleteForMe,
@@ -58,6 +102,8 @@ export function MessageBubble({
   const canDeleteAll = isMine && (Date.now() - (msg.createdAt || Date.now()) < DELETE_TIME_LIMIT);
   const borderTheme = isDark ? 'border-gray-800' : 'border-gray-200';
 
+  const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
+
   const { refs, floatingStyles } = useFloating({
     open: isMenuOpen,
     placement: isMine ? 'bottom-end' : 'bottom-start',
@@ -69,11 +115,29 @@ export function MessageBubble({
     setActiveMenuId(isMenuOpen ? null : msg.id);
   };
 
+  const handleDownload = async (e: React.MouseEvent, url: string, filename: string) => {
+    e.stopPropagation(); 
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename || 'image.jpg';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error("Download failed", error);
+      window.open(url, '_blank');
+    }
+  };
+
   if (isDeletedForMe) return null;
 
   return (
     <>
-      {/* 1. DATE DIVIDER MOVED OUTSIDE: It will no longer fade out when deleting a message */}
       {showDateDivider && (
         <div className="flex justify-center my-4">
             <span className="text-[10px] font-bold uppercase px-3 py-1 rounded-full bg-gray-200 dark:bg-slate text-gray-500">
@@ -82,7 +146,6 @@ export function MessageBubble({
         </div>
       )}
 
-      {/* 2. ONLY THE BUBBLE FADES NOW */}
       <motion.div 
         animate={isDeleting ? { opacity: 0, scale: 0.95 } : { opacity: 1, scale: 1 }}
         transition={{ duration: 0.15, ease: "easeOut" }}
@@ -94,11 +157,9 @@ export function MessageBubble({
             <div className={`py-2 px-4 shadow-sm overflow-hidden transition-all duration-500
               ${isMine 
                 ? `rounded-[12px] rounded-br-[2px] bg-primary text-white ${
-                    // Highlights YOUR messages with a bright pop and a soft white ring
                     isHighlighted ? 'brightness-110 scale-[1.02] shadow-md ring-2 ring-white/50' : ''
                   }` 
                 : `rounded-[12px] rounded-bl-[2px] border ${borderTheme} ${
-                    // Highlights THEIR messages using your exact theme's primary color at low opacity
                     isHighlighted 
                       ? (isDark 
                           ? 'bg-primary/20 scale-[1.02] shadow-md ring-2 ring-primary/50' 
@@ -127,22 +188,39 @@ export function MessageBubble({
                       </button>
                     )}
 
-                    <div className="flex flex-col gap-1">
-                      {msg.fileUrl && (
-                        msg.fileType?.startsWith('image/') 
-                          ? <img src={msg.fileUrl} alt="attachment" className="max-w-full rounded-lg mt-1 min-h-[120px] bg-black/10 object-cover" />
-                          : (
-                            <a href={msg.fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 mt-1 rounded bg-black/10 dark:bg-white/10 hover:bg-black/20 transition-colors group/file relative pr-8">
-                              <div className={`p-2 rounded-lg ${isMine ? 'bg-white/20' : 'bg-primary/10 text-primary'}`}><FileText size={20}/></div>
-                              <div className="flex flex-col overflow-hidden">
-                                <span className="text-sm font-medium truncate max-w-[150px]">{msg.fileName || 'Document'}</span>
-                                <span className="text-[10px] opacity-60 uppercase font-bold">{msg.fileType?.split('/')[1] || 'File'}</span>
-                              </div>
-                              <Download size={14} className="ml-auto opacity-40" />
-                            </a>
-                          )
+                    <div className="flex flex-col gap-1 w-full">
+                      {msg.attachments && msg.attachments.length > 0 && (
+                        <div className={`grid gap-1.5 mt-1 ${
+                          msg.attachments.filter((a: any) => a.fileType?.startsWith('image/')).length > 1 
+                            ? 'grid-cols-2' 
+                            : 'grid-cols-1 max-w-[280px]' 
+                        }`}>
+                          {msg.attachments.map((att: any, index: number) => (
+                            att.fileType?.startsWith('image/') ? (
+                              <ImageAttachment 
+                                key={index}
+                                url={att.fileUrl}
+                                thumbnail={att.thumbnail} 
+                                fileName={att.fileName}
+                                isSingle={msg.attachments.length === 1}
+                                onClick={() => setEnlargedImage(att.fileUrl)}
+                                onDownload={handleDownload}
+                              />
+                            ) : (
+                              <a key={index} href={att.fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 rounded bg-black/10 dark:bg-white/10 hover:bg-black/20 transition-colors group/file relative pr-8 w-full col-span-full">
+                                <div className={`p-2 rounded-lg shrink-0 ${isMine ? 'bg-white/20' : 'bg-primary/10 text-primary'}`}><FileText size={20}/></div>
+                                <div className="flex flex-col overflow-hidden w-full">
+                                  <span className="text-sm font-medium truncate w-full">{att.fileName || 'Document'}</span>
+                                  <span className="text-[10px] opacity-60 uppercase font-bold">{att.fileType?.split('/')[1] || 'File'}</span>
+                                </div>
+                                <Download size={14} className="ml-auto opacity-40 shrink-0" />
+                              </a>
+                            )
+                          ))}
+                        </div>
                       )}
-                      {msg.text && <span className="whitespace-pre-wrap break-words break-all">{msg.text}</span>}
+
+                      {msg.text && <span className="whitespace-pre-wrap break-words break-all mt-1">{msg.text}</span>}
                     </div>
                   </div>
                 )}
@@ -178,10 +256,44 @@ export function MessageBubble({
                       className={`w-36 rounded-xl shadow-2xl border ${isDark ? 'bg-[#1e293b] border-gray-700' : 'bg-white border-gray-200'} overflow-hidden`}
                     >
                         <button onClick={() => { setReplyingTo(msg); setActiveMenuId(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-black/5 transition-colors">Reply</button>
-                        {canDeleteAll && <button onClick={() => { deleteForEveryone(msg.id, msg.fileUrl); setActiveMenuId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors font-medium">Delete for all</button>}
+                        {canDeleteAll && <button onClick={() => { deleteForEveryone(msg.id, msg.attachments); setActiveMenuId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors font-medium">Delete for all</button>}
                         <button onClick={() => { deleteForMe(msg.id); setActiveMenuId(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-black/5 transition-colors">Delete for me</button>
                     </motion.div>
                   </div>
+                )}
+              </AnimatePresence>,
+              document.body
+            )}
+            
+            {createPortal(
+              <AnimatePresence>
+                {enlargedImage && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    onClick={() => setEnlargedImage(null)}
+                    className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/90 p-4 sm:p-8 cursor-zoom-out backdrop-blur-sm"
+                  >
+                    <button 
+                      onClick={() => setEnlargedImage(null)}
+                      className="absolute top-4 right-4 sm:top-6 sm:right-6 p-2.5 bg-white/10 hover:bg-white/25 text-white rounded-full backdrop-blur-md transition-all z-10"
+                    >
+                      <X size={20} />
+                    </button>
+
+                    <motion.img
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0.9, opacity: 0 }}
+                      transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                      src={enlargedImage}
+                      alt="Enlarged attachment"
+                      className="max-w-full max-h-full object-contain rounded-lg shadow-2xl cursor-default"
+                      onClick={(e) => e.stopPropagation()} 
+                    />
+                  </motion.div>
                 )}
               </AnimatePresence>,
               document.body

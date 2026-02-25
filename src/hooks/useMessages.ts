@@ -17,8 +17,11 @@ import {
 export function useMessages(activeChatId?: string) {
   const [messages, setMessages] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    setIsLoading(true);
+
     if (!auth.currentUser) return;
 
     let q;
@@ -28,24 +31,38 @@ export function useMessages(activeChatId?: string) {
       q = query(collection(db, 'messages'), where('receiverId', '==', auth.currentUser.uid), orderBy('createdAt', 'asc'));
     }
 
-    const unsubscribe = onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
-      const loaded: any[] = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data,
-          createdAt: data.createdAt?.toMillis ? data.createdAt.toMillis() : Date.now(),
-          isPending: doc.metadata.hasPendingWrites 
-        };
-        }).filter((m: any) => !m.deletedFor?.includes(auth.currentUser?.uid));
+    // --- THE PRO FIX: 50ms Debounce ---
+    // This protects the Firebase SDK from internal assertion crashes due to rapid unmounts
+    let unsubscribe: (() => void) | undefined;
     
-      setMessages(loaded);
+    const timeoutId = setTimeout(() => {
+      unsubscribe = onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
+        const loaded: any[] = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...data,
+            createdAt: data.createdAt?.toMillis ? data.createdAt.toMillis() : Date.now(),
+            isPending: doc.metadata.hasPendingWrites 
+          };
+        }).filter((m: any) => !m.deletedFor?.includes(auth.currentUser?.uid));
       
-      const unread = loaded.filter(m => !m.isRead && m.receiverId === auth.currentUser?.uid).length;
-      setUnreadCount(unread);
-    });
+        setMessages(loaded);
+        
+        const unread = loaded.filter(m => !m.isRead && m.receiverId === auth.currentUser?.uid).length;
+        setUnreadCount(unread);
+        setIsLoading(false);
+      });
+    }, 50);
 
-    return () => unsubscribe();
+    // CLEANUP: If the user clicks away before 50ms, the timeout is cleared 
+    // and the buggy Firebase connection is never even attempted.
+    return () => {
+      clearTimeout(timeoutId);
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, [activeChatId]);
 
   const sendMessage = async (receiverId: string, text: string, replyTo?: any) => {
@@ -74,13 +91,10 @@ export function useMessages(activeChatId?: string) {
     await addDoc(collection(db, 'messages'), messageData);
   };
 
-  // UPDATED: Now accepts the pre-uploaded file details
-  const sendAttachment = async (
+  const sendAttachments = async (
     receiverId: string, 
-    fileUrl: string, 
+    attachments: { fileUrl: string; fileName: string; fileType: string }[], 
     text: string, 
-    fileName: string, 
-    fileType: string, 
     replyTo?: any
   ) => {
     if (!auth.currentUser) return;
@@ -92,9 +106,7 @@ export function useMessages(activeChatId?: string) {
       senderId: auth.currentUser.uid,
       receiverId,
       text: text || '',
-      fileUrl,
-      fileName,
-      fileType,
+      attachments, // Pure array, no single file fallbacks
       isRead: false,
       isDeleted: false,
       deletedFor: [],
@@ -123,24 +135,25 @@ export function useMessages(activeChatId?: string) {
     });
   };
 
-  const deleteForEveryone = async (messageId: string, fileUrl?: string) => {
+  // Cleaned up: Only maps through the array to delete files
+  const deleteForEveryone = async (messageId: string, attachments?: any[]) => {
     try {
-      // 1. Mark as deleted and wipe the actual data from Firestore so it isn't taking up space
       await updateDoc(doc(db, 'messages', messageId), { 
         isDeleted: true,
         text: null,
-        fileUrl: null,
-        fileName: null,
-        fileType: null
+        attachments: null // Wipe the array from the database
       });
 
-      // 2. If this message had a file, physically delete it from your Firebase Storage bucket
-      if (fileUrl) {
+      if (attachments && attachments.length > 0) {
         const storage = getStorage();
-        const fileRef = ref(storage, fileUrl);
-        await deleteObject(fileRef);
-        console.log("File successfully deleted from Firebase Storage!");
-      }
+        const deletePromises = attachments.map(att => {
+          const fileRef = ref(storage, att.fileUrl);
+          return deleteObject(fileRef);
+        });
+        
+        await Promise.all(deletePromises);
+        console.log("All attached files deleted from Storage!");
+      } 
     } catch (error) {
       console.error("Error deleting message or file:", error);
     }
@@ -148,9 +161,10 @@ export function useMessages(activeChatId?: string) {
 
   return { 
     messages, 
-    unreadCount, 
+    unreadCount,
+    isLoading, 
     sendMessage, 
-    sendAttachment, 
+    sendAttachments, 
     markAsRead, 
     deleteForMe, 
     deleteForEveryone 
