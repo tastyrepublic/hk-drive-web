@@ -72,7 +72,6 @@ export function MessagesView({ isDark, students }: Props) {
                       name={student.name} 
                       size="md" 
                       hasUnread={hasUnread} 
-                      isDark={isDark} 
                       isSelected={isSelected}
                     />
                     

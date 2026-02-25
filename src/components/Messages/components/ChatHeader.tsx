@@ -29,7 +29,6 @@ export function ChatHeader({ receiverName, isDark, onBack }: ChatHeaderProps) {
       <Avatar 
         name={receiverName} 
         size="sm" 
-        isDark={isDark} 
       />
 
       <span className={`font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
