@@ -44,6 +44,7 @@ interface ChatInputProps {
 }
 
 const MAX_CHARS = 1000;
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB (Adjust this number as needed)
 
 type StagedFile = {
   id: string;
@@ -208,45 +209,60 @@ export function ChatInput({
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
+  const files = Array.from(e.target.files || []);
+  if (!files.length) return;
 
-    const availableSlots = 10 - stagedFiles.length;
-    if (availableSlots <= 0) {
-      e.target.value = '';
-      return;
-    }
+  // 1. FILTER: Remove any files that exceed the size limit
+  const validSizeFiles = files.filter(file => file.size <= MAX_FILE_SIZE);
+  const oversizedCount = files.length - validSizeFiles.length;
 
-    const filesToAdd = files.slice(0, availableSlots);
-    
-    if (files.length > availableSlots) {
-      setFileWarning(t('chat.maxFilesLimit', `You can only attach a maximum of 10 files at a time. Only the first ${availableSlots} were added.`));
-      setTimeout(() => setFileWarning(null), 4000);
-    }
+  if (oversizedCount > 0) {
+    setFileWarning(t('chat.fileTooLarge', `${oversizedCount} file(s) were too large. Max size is 10MB.`));
+    setTimeout(() => setFileWarning(null), 4000);
+  }
 
-    const newStaged: StagedFile[] = filesToAdd.map(file => ({
-      id: Math.random().toString(36).substring(7),
-      file,
-      previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
-      progress: 0,
-      uploadedUrl: null,
-      storagePath: null,
-      task: null,
-      thumbnail: null
-    }));
+  if (!validSizeFiles.length) {
+    e.target.value = '';
+    return;
+  }
 
-    setStagedFiles(prev => [...prev, ...newStaged]);
-    
-    newStaged.forEach(async (staged) => {
-      const thumb = await generateThumbnail(staged.file);
-      setStagedFiles(current => 
-        current.map(f => f.id === staged.id ? { ...f, thumbnail: thumb } : f)
-      );
-      startBackgroundUpload(staged.id, staged.file);
-    });
-    
-    e.target.value = ''; 
-  };
+  // 2. COUNT LIMIT: Only add files up to the 10-slot limit
+  const availableSlots = 10 - stagedFiles.length;
+  if (availableSlots <= 0) {
+    e.target.value = '';
+    return;
+  }
+
+  const filesToAdd = validSizeFiles.slice(0, availableSlots);
+  
+  if (validSizeFiles.length > availableSlots) {
+    setFileWarning(t('chat.maxFilesLimit', `Only the first ${availableSlots} valid files were added.`));
+    setTimeout(() => setFileWarning(null), 4000);
+  }
+
+  const newStaged: StagedFile[] = filesToAdd.map(file => ({
+    id: Math.random().toString(36).substring(7),
+    file,
+    previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+    progress: 0,
+    uploadedUrl: null,
+    storagePath: null,
+    task: null,
+    thumbnail: null
+  }));
+
+  setStagedFiles(prev => [...prev, ...newStaged]);
+  
+  newStaged.forEach(async (staged) => {
+    const thumb = await generateThumbnail(staged.file);
+    setStagedFiles(current => 
+      current.map(f => f.id === staged.id ? { ...f, thumbnail: thumb } : f)
+    );
+    startBackgroundUpload(staged.id, staged.file);
+  });
+  
+  e.target.value = ''; 
+};
 
   const removeFile = (id: string) => {
     const fileToRemove = stagedFiles.find(f => f.id === id);
