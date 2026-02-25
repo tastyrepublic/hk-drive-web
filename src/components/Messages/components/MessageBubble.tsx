@@ -42,7 +42,7 @@ const getDateDividerLabel = (timestamp: number | null | undefined, t: any) => {
 };
 
 // --- NEW PRO COMPONENT DEFINED OUTSIDE ---
-const ImageAttachment = ({ url, thumbnail, isSingle, onClick, onDownload, fileName }: any) => {
+const ImageAttachment = ({ url, thumbnail, isSingle, onClick }: any) => {
   const [isLoaded, setIsLoaded] = useState(false);
 
   return (
@@ -71,13 +71,15 @@ const ImageAttachment = ({ url, thumbnail, isSingle, onClick, onDownload, fileNa
       
       {/* Hover Download Button */}
       <div className="absolute inset-0 z-20 bg-black/0 group-hover:bg-black/20 transition-all flex items-end justify-end p-2 opacity-0 group-hover:opacity-100">
-        <button
-          onClick={(e) => onDownload(e, url, fileName)}
+        <a
+          href={url}
+          download
+          onClick={(e) => e.stopPropagation()} 
           className="p-1.5 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md transition-all shadow-sm"
           title="Download Image"
         >
           <Download size={14} />
-        </button>
+        </a>
       </div>
     </div>
   );
@@ -113,25 +115,6 @@ export function MessageBubble({
   const handleMenuToggle = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     setActiveMenuId(isMenuOpen ? null : msg.id);
-  };
-
-  const handleDownload = async (e: React.MouseEvent, url: string, filename: string) => {
-    e.stopPropagation(); 
-    try {
-      const response = await fetch(url);
-      const blob = await response.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = filename || 'image.jpg';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(blobUrl);
-    } catch (error) {
-      console.error("Download failed", error);
-      window.open(url, '_blank');
-    }
   };
 
   if (isDeletedForMe) return null;
@@ -204,10 +187,9 @@ export function MessageBubble({
                                 fileName={att.fileName}
                                 isSingle={msg.attachments.length === 1}
                                 onClick={() => setEnlargedImage(att.fileUrl)}
-                                onDownload={handleDownload}
                               />
                             ) : (
-                              <a key={index} href={att.fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 rounded bg-black/10 dark:bg-white/10 hover:bg-black/20 transition-colors group/file relative pr-8 w-full col-span-full">
+                              <a key={index} href={att.fileUrl} download className="flex items-center gap-3 p-3 rounded bg-black/10 dark:bg-white/10 hover:bg-black/20 transition-colors group/file relative pr-8 w-full col-span-full">
                                 <div className={`p-2 rounded-lg shrink-0 ${isMine ? 'bg-white/20' : 'bg-primary/10 text-primary'}`}><FileText size={20}/></div>
                                 <div className="flex flex-col overflow-hidden w-full">
                                   <span className="text-sm font-medium truncate w-full">{att.fileName || 'Document'}</span>

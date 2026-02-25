@@ -186,6 +186,7 @@ export function ChatInput({
     
     const metadata = {
       contentType: file.type,
+      contentDisposition: `attachment; filename="${file.name}"`,
       cacheControl: 'public,max-age=31536000', 
     };
     
