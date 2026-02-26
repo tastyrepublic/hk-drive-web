@@ -19,8 +19,10 @@ export function DiaryCard({ slot, setEditingSlot, isAbsolute }: any) {
 
   // 2. Determine Status
   const isBlocked = slot.status === 'Blocked';
+  const isDraft = slot.status === 'Draft'; // <-- ADD THIS
   const hasStudent = slot.studentId && slot.studentId !== 'Unknown' && slot.studentId !== '';
-  const isEffectiveBooked = !isBlocked && hasStudent;
+  // Update effective booked to include drafts so it renders the student info:
+  const isEffectiveBooked = (!isBlocked && hasStudent) || isDraft;
   
   // [NEW] Check if self-booked
   const isSelfBooked = slot.bookedBy === 'student';
@@ -34,11 +36,13 @@ export function DiaryCard({ slot, setEditingSlot, isAbsolute }: any) {
       className={`absolute p-2 flex flex-col overflow-hidden cursor-pointer transition-all hover:z-20 shadow-sm hover:shadow-md
         inset-x-[1px]
         rounded-tl-md rounded-tr-md rounded-bl-md rounded-br-3xl
-        ${isEffectiveBooked 
-            ? 'bg-orange text-white'      
-            : isBlocked 
-              ? 'bg-statusRed text-white' 
-              : 'bg-yellow-200 text-yellow-900' 
+        ${isDraft
+            ? 'bg-purple-500/90 text-white border-2 border-dashed border-purple-300' // <-- DRAFT STYLING
+            : isEffectiveBooked 
+              ? 'bg-orange text-white'      
+              : isBlocked 
+                ? 'bg-statusRed text-white' 
+                : 'bg-yellow-200 text-yellow-900' 
         }`}
       style={{ top: `${startY}px`, height: `${height}px` }}
       onClick={(e) => {
@@ -77,7 +81,9 @@ export function DiaryCard({ slot, setEditingSlot, isAbsolute }: any) {
           <>
             <div className="flex items-center gap-1 mb-0.5 opacity-80">
                <User size={10} />
-               <span className="text-[9px] font-bold uppercase">Student</span>
+               <span className="text-[9px] font-bold uppercase">
+                 {isDraft ? 'Draft Lesson' : 'Student'} {/* <-- SHOW DRAFT HERE */}
+               </span>
             </div>
             <div className="text-[12px] font-black leading-tight truncate">
               {slot.studentName || 'Unknown Student'}

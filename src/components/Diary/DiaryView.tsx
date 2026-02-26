@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Sparkles, AlertCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Sparkles, AlertCircle, Send, Loader2 } from 'lucide-react';
 import { motion, useMotionValue, useTransform, animate, AnimatePresence } from 'framer-motion';
 import { DiaryCard } from './DiaryCard';
 
@@ -13,6 +13,8 @@ interface Props {
   slots: any[];
   setEditingSlot: (slot: any) => void;
   lessonDuration: number; 
+  onPublishDrafts: () => Promise<void>;
+  onOpenAutoFill: (weekStartDate: Date) => void; // <-- Change this prop
 }
 
 const HOURS = Array.from({ length: 18 }, (_, i) => i + 6);
@@ -53,7 +55,7 @@ const timeToPixels = (timeStr: string) => {
     return (totalMinutesFromStart / 60) * CELL_HEIGHT;
 };
 
-export function DiaryView({ slots, setEditingSlot, lessonDuration }: Props) {
+export function DiaryView({ slots, setEditingSlot, lessonDuration, onPublishDrafts, onOpenAutoFill }: Props) {
   const [[weekOffset, direction], setWeekOffset] = useState([0, 0]);
   const [nowPosition, setNowPosition] = useState(0);
   
@@ -63,6 +65,10 @@ export function DiaryView({ slots, setEditingSlot, lessonDuration }: Props) {
   const scrollLimit = -(CONTENT_HEIGHT - containerHeight);
   
   const isDragging = useRef(false);
+
+  const [isPlanningMode, setIsPlanningMode] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const draftSlots = slots.filter(s => s.status === 'Draft');
 
   // --- PHYSICS ---
   const scaleY = useTransform(
@@ -177,18 +183,58 @@ export function DiaryView({ slots, setEditingSlot, lessonDuration }: Props) {
             {days[0].toLocaleDateString('en-GB', { month: 'short' })} '{days[0].toLocaleDateString('en-GB', { year: '2-digit' })}
           </h2>
           <div className="flex items-center gap-2">
+            
+            {/* 1. PUBLISH BUTTON (Only shows if there are drafts) */}
+            {draftSlots.length > 0 && (
+              <button 
+                onClick={async () => {
+                  setIsPublishing(true);
+                  await onPublishDrafts();
+                  setIsPublishing(false);
+                  setIsPlanningMode(false); // Auto-exit planning mode when done
+                }}
+                disabled={isPublishing}
+                className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-1.5 rounded-lg font-bold text-xs shadow-lg active:scale-95 transition-all"
+              >
+                {isPublishing ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                <span>Publish {draftSlots.length} Drafts</span>
+              </button>
+            )}
+
+            {/* 2. ADD LESSON BUTTON (Passes Draft status if in Planning Mode) */}
             <button 
               onClick={() => {
-                setEditingSlot({}); 
+                setEditingSlot({ status: isPlanningMode ? 'Draft' : 'Booked' }); 
               }}
               className="flex items-center gap-2 bg-orange text-white px-3 py-1.5 rounded-lg font-bold text-xs shadow-lg active:scale-95 transition-transform"
             >
               <Plus size={16} strokeWidth={3} />
-              <span>Add Lesson</span>
+              <span className="hidden sm:inline">Add Lesson</span>
             </button>
-            <button className="flex items-center gap-2 bg-midnight border border-gray-800 text-textGrey hover:text-orange px-3 py-1.5 rounded-lg font-bold text-xs transition-colors">
+            
+            {/* 3. AUTO-FILL BUTTON (Opens the new Modal) */}
+            <button 
+              onClick={() => {
+                onOpenAutoFill(days[0]); 
+                setIsPlanningMode(true); // Turns on draft mode so you can see them!
+              }}
+              className="flex items-center gap-2 bg-purple-500/20 border border-purple-500/50 text-purple-400 hover:bg-purple-500 hover:text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-all shadow-[0_0_15px_rgba(168,85,247,0.15)] hover:shadow-[0_0_20px_rgba(168,85,247,0.4)]"
+            >
               <Sparkles size={16} />
-              <span>AI Arrange</span>
+              <span className="hidden sm:inline">Auto-Fill Week</span>
+            </button>
+            
+            {/* 4. PLANNING MODE TOGGLE (This is your existing button) */}
+            <button 
+              onClick={() => setIsPlanningMode(!isPlanningMode)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold text-xs transition-colors border ${
+                isPlanningMode 
+                  ? 'bg-purple-500/20 text-purple-400 border-purple-500/50' 
+                  : 'bg-midnight text-textGrey border-gray-800 hover:text-purple-400'
+              }`}
+            >
+              <Sparkles size={16} />
+              <span className="hidden sm:inline">{isPlanningMode ? 'Planning Active' : 'Plan Schedule'}</span>
             </button>
           </div>
         </div>
@@ -289,7 +335,12 @@ export function DiaryView({ slots, setEditingSlot, lessonDuration }: Props) {
                         className="flex w-full h-full absolute top-0 left-0"
                     >
                         {days.map((day, dayIdx) => {
-                        const dateString = day.toISOString().split('T')[0];
+                        // --- BUG FIX: Use Local Time instead of UTC ---
+                        const y = day.getFullYear();
+                        const m = String(day.getMonth() + 1).padStart(2, '0');
+                        const d = String(day.getDate()).padStart(2, '0');
+                        const dateString = `${y}-${m}-${d}`;
+                        
                         const daySlots = slots.filter(s => s.date === dateString);
 
                         // --- [NEW] CALCULATE RESTRICTED ZONES FOR THIS DAY ---
@@ -350,6 +401,7 @@ export function DiaryView({ slots, setEditingSlot, lessonDuration }: Props) {
                                         time: smartTime, 
                                         location: '', 
                                         type: '', 
+                                        status: isPlanningMode ? 'Draft' : 'Booked' // <-- ADD THIS LINE
                                       }); 
                                   }}
                                 >

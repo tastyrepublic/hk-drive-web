@@ -3,7 +3,7 @@ import { db, auth } from '../../firebase';
 import { signOut, type User } from 'firebase/auth';
 import { 
   collection, query, where, onSnapshot, 
-  doc, setDoc, getDoc, updateDoc 
+  doc, setDoc, getDoc, updateDoc, writeBatch 
 } from 'firebase/firestore';
 import { 
   LogOut, Sun, Moon, 
@@ -23,6 +23,7 @@ import { StudentFormModal } from '../Modals/StudentFormModal';
 import { ConfirmModal } from '../Modals/ConfirmModal';
 import { NotificationsMenu } from '../Notifications/NotificationsMenu';
 import { MessagesView } from '../Messages/MessagesView';
+import { AutoFillModal } from '../Modals/AutoFillModal';
 
 // Hooks
 import { useLessonManager } from '../../hooks/useLessonManager';
@@ -83,17 +84,20 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
   const [profile, setProfile] = useState<any>({ 
     name: '', phone: '', 
     lessonDuration: 45, defaultDoubleLesson: false, 
-    bankName: '', accountNo: '', vehicleTypes: []
+    bankName: '', accountNo: '', vehicleTypes: [],
+    defaultExamCenters: []
   });
   const [, setOriginalProfile] = useState<any>({ 
-    name: '', phone: '', lessonDuration: 45, defaultDoubleLesson: false, bankName: '', accountNo: '', vehicleTypes: [] 
+    name: '', phone: '', lessonDuration: 45, defaultDoubleLesson: false, bankName: '', accountNo: '', vehicleTypes: [], defaultExamCenter: '' 
   });
 
   const [saveProfileLoading, setSaveProfileLoading] = useState(false);
 
+  const [autoFillDate, setAutoFillDate] = useState<Date | null>(null);
+
   // --- HOOKS ---
   const { 
-    saveLesson, deleteLesson, saveLoading: saveSlotLoading, validationMsg, setValidationMsg 
+    saveLesson, deleteLesson, autoScheduleWeek, saveLoading: saveSlotLoading, validationMsg, setValidationMsg 
   } = useLessonManager(user, slots, profile);
 
   const {
@@ -251,6 +255,42 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
 
   const isSlotModified = isFormValid && hasChanges;
   const isStudentModified = isEditingStudent ? JSON.stringify(studentForm) !== JSON.stringify(originalStudent) : (studentForm.name.trim() !== '' && studentForm.phone.trim() !== '');
+
+  const handlePublishDrafts = async () => {
+    const draftSlots = slots.filter(s => s.status === 'Draft');
+    if (draftSlots.length === 0) return;
+
+    try {
+      const batch = writeBatch(db);
+      const studentsNotified = new Set(); // Keep track so we only send 1 alert per student
+
+      draftSlots.forEach(draft => {
+        // 1. Flip the slot from 'Draft' to 'Booked'
+        const slotRef = doc(db, "slots", draft.id);
+        batch.update(slotRef, { status: 'Booked' });
+
+        // 2. Queue up a single notification per student
+        if (draft.studentId && draft.studentId !== 'Unknown' && !studentsNotified.has(draft.studentId)) {
+          const notifRef = doc(collection(db, 'notifications'));
+          batch.set(notifRef, {
+            userId: draft.studentId,
+            type: 'system',
+            title: 'New Lessons Scheduled',
+            message: 'Your instructor has published new lessons to your schedule. Please check the app to view your upcoming driving slots!',
+            isRead: false,
+            createdAt: Date.now()
+          });
+          studentsNotified.add(draft.studentId);
+        }
+      });
+
+      await batch.commit(); // Fires everything to the database at the exact same time!
+      showToast(`Successfully published ${draftSlots.length} lessons!`, 'success');
+    } catch (error) {
+      console.error("Publish error:", error);
+      showToast("Error publishing schedule", 'error');
+    }
+  };
 
   // --- ACTIONS ---
   const saveSlotEdit = async () => { 
@@ -502,6 +542,8 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
                           slots={processedSlots} 
                           setEditingSlot={handleSetEditingSlot} 
                           lessonDuration={Number(profile?.lessonDuration) || 45} 
+                          onPublishDrafts={handlePublishDrafts} 
+                          onOpenAutoFill={(date) => setAutoFillDate(date)} // <-- OPENS MODAL
                         />
                     } />
                     
@@ -570,6 +612,26 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
         students={students}
         showToast={showToast}
         teacherVehicles={profile?.vehicleTypes || []}
+      />
+
+      <AutoFillModal
+        isOpen={!!autoFillDate}
+        onClose={() => setAutoFillDate(null)}
+        isGenerating={saveSlotLoading}
+        teacherVehicles={profile?.vehicleTypes || []}
+        defaultDuration={Number(profile?.lessonDuration) || 45} // <-- NEW: From profile!
+        defaultDouble={!!profile?.defaultDoubleLesson}          // <-- NEW: From profile!
+        teacherExamCenters={profile?.defaultExamCenters || []}
+        onGenerate={async (config) => {
+            if (autoFillDate) {
+                await autoScheduleWeek(
+                    autoFillDate,
+                    config,
+                    (msg) => { showToast(msg, 'success'); setAutoFillDate(null); },
+                    (msg) => showToast(msg, 'error')
+                );
+            }
+        }}
       />
     </div>
   );

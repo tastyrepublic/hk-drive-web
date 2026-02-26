@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
-import { Routes, Route, useNavigate, useLocation, Navigate, useBlocker } from 'react-router'; // <-- Added useBlocker
+import { useState, useEffect, useRef } from 'react'; // <-- Add useRef
+import { Routes, Route, useNavigate, useLocation, Navigate, useBlocker } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SettingsSidebar } from './SettingsSidebar';
-import { User as UserIcon, Clock, Landmark, ShieldCheck, Save, Loader2, Car, Check, Layers } from 'lucide-react';
-import { VEHICLE_TYPES, LESSON_DURATIONS } from '../../constants/list'; 
+import { User as UserIcon, Clock, Landmark, ShieldCheck, Save, Loader2, Car, Check, Layers, ChevronDown, X } from 'lucide-react'; // <-- Add ChevronDown and X
+import { VEHICLE_TYPES, LESSON_DURATIONS, EXAM_CENTERS, EXAM_REGIONS, getExamCenterLabel } from '../../constants/list'; // <-- Add Exam Constants 
 import { PAGE_VARIANTS, PAGE_TRANSITION } from '../../constants/animations';
 import { UnsavedChangesBar } from '../Shared/UnsavedChangesBar'; // <-- Added Warning Bar
 
@@ -31,6 +31,38 @@ export function SettingsView({ profile, setProfile, onSave, isLoading }: Props) 
   // --- CALCULATE MODIFIED STATE ---
   const isModified = JSON.stringify(draftProfile) !== JSON.stringify(profile);
   const hasVehicleTypes = draftProfile.vehicleTypes && draftProfile.vehicleTypes.length > 0;
+
+  // --- EXAM CENTER DROPDOWN STATE ---
+  const [showCenterDropdown, setShowCenterDropdown] = useState(false);
+  const [centerRegionFilter, setCenterRegionFilter] = useState<string>('All');
+  const centerDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Click outside to close dropdown
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (centerDropdownRef.current && !centerDropdownRef.current.contains(event.target as Node)) {
+        setShowCenterDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const filteredExamCenters = EXAM_CENTERS.filter(center => {
+      if (centerRegionFilter === 'All') return true;
+      // @ts-ignore
+      return center.region === centerRegionFilter;
+  });
+
+  const selectedCenters = draftProfile.defaultExamCenters || [];
+
+  const toggleExamCenter = (centerId: string) => {
+     if (selectedCenters.includes(centerId)) {
+         setDraftProfile({ ...draftProfile, defaultExamCenters: selectedCenters.filter((id: string) => id !== centerId) });
+     } else {
+         setDraftProfile({ ...draftProfile, defaultExamCenters: [...selectedCenters, centerId] });
+     }
+  };
 
   // --- 1. EXTERNAL PROTECTION (Tab Close / Refresh) ---
   useEffect(() => {
@@ -181,39 +213,125 @@ export function SettingsView({ profile, setProfile, onSave, isLoading }: Props) 
                       </div>
                     </div>
 
-                    {/* DEFAULT DOUBLE SESSION SETTING */}
+                    {/* LESSON DEFAULTS */}
                     <div className="bg-slate p-6 rounded-xl border border-gray-800 shadow-sm transition-colors duration-300">
                       <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
                         <Layers className="text-orange" /> Lesson Defaults
                       </h2>
                       
-                      <div className="flex items-center justify-between p-4 bg-midnight rounded-xl border border-gray-700">
-                        <div className="space-y-1">
-                            <div className="font-bold text-white">Default to Double Session</div>
-                            <div className="text-xs text-textGrey">
-                                Automatically enable "Double Session" when creating a new lesson.
+                      <div className="space-y-4">
+                          {/* 1. Double Session Toggle */}
+                          <div className="flex items-center justify-between p-4 bg-midnight rounded-xl border border-gray-700">
+                            <div className="space-y-1">
+                                <div className="font-bold text-white">Default to Double Session</div>
+                                <div className="text-xs text-textGrey">
+                                    Automatically enable "Double Session" when creating a new lesson.
+                                </div>
                             </div>
-                        </div>
-                        
-                        <button 
-                            onClick={() => setDraftProfile({ 
-                                ...draftProfile, 
-                                defaultDoubleLesson: !draftProfile.defaultDoubleLesson 
-                            })}
-                            className={`w-14 h-8 rounded-full p-1 transition-all duration-300 ease-in-out relative ${
-                                draftProfile.defaultDoubleLesson 
-                                ? 'bg-orange' 
-                                : 'bg-gray-700'
-                            }`}
-                        >
-                            <div className={`w-6 h-6 bg-white rounded-full shadow-md transform transition-transform duration-300 ${
-                                draftProfile.defaultDoubleLesson ? 'translate-x-6' : 'translate-x-0'
-                            }`} />
-                        </button>
+                            
+                            <button 
+                                onClick={() => setDraftProfile({ 
+                                    ...draftProfile, 
+                                    defaultDoubleLesson: !draftProfile.defaultDoubleLesson 
+                                })}
+                                className={`w-14 h-8 rounded-full p-1 transition-all duration-300 ease-in-out relative ${
+                                    draftProfile.defaultDoubleLesson 
+                                    ? 'bg-orange' 
+                                    : 'bg-gray-700'
+                                }`}
+                            >
+                                <div className={`w-6 h-6 bg-white rounded-full shadow-md transform transition-transform duration-300 ${
+                                    draftProfile.defaultDoubleLesson ? 'translate-x-6' : 'translate-x-0'
+                                }`} />
+                            </button>
+                          </div>
+
+                          {/* 2. Custom Multi-Select Exam Centers */}
+                          <div className="flex flex-col p-4 bg-midnight rounded-xl border border-gray-700 relative z-40" ref={centerDropdownRef}>
+                            <div className="space-y-1 mb-3">
+                                <div className="font-bold text-white">Default Exam Centers</div>
+                                <div className="text-xs text-textGrey">
+                                    Select all the centers you regularly teach at.
+                                </div>
+                            </div>
+
+                            {/* Selected Tags */}
+                            {selectedCenters.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mb-3">
+                                    {selectedCenters.map((id: string) => (
+                                        <div key={id} className="flex items-center gap-1 bg-orange/20 text-orange px-2 py-1.5 rounded-lg text-xs font-bold border border-orange/30">
+                                            {getExamCenterLabel(id)}
+                                            <button 
+                                                onClick={() => toggleExamCenter(id)} 
+                                                className="hover:bg-orange/20 rounded-full p-0.5 ml-1 transition-colors"
+                                            >
+                                                <X size={14} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Region Filter Tabs */}
+                            <div className="flex flex-wrap gap-1.5 mb-2">
+                                {EXAM_REGIONS.map(region => (
+                                    <button
+                                        key={region} type="button"
+                                        onClick={() => { setCenterRegionFilter(region); setShowCenterDropdown(true); }}
+                                        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors border ${
+                                            centerRegionFilter === region ? 'bg-orange text-white border-orange shadow-sm' : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'
+                                        }`}
+                                    >
+                                        {region === 'New Territories' ? 'N.T.' : region}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* Custom Dropdown Trigger */}
+                            <div 
+                                onClick={() => setShowCenterDropdown(!showCenterDropdown)}
+                                className={`w-full pl-4 pr-3 p-3 bg-slate border rounded-lg text-white cursor-pointer flex items-center justify-between transition-colors ${showCenterDropdown ? 'border-orange' : 'border-gray-700 hover:border-gray-500'}`}
+                            >
+                                <span className="text-sm font-bold text-gray-400">
+                                    {selectedCenters.length > 0 ? "Add another center..." : "Select Exam Centers..."}
+                                </span>
+                                <ChevronDown size={16} className={`text-textGrey shrink-0 transition-transform ${showCenterDropdown ? 'rotate-180' : ''}`} />
+                            </div>
+
+                            {/* The Floating List */}
+                            {showCenterDropdown && (
+                                <div className="absolute bottom-full left-0 right-0 mb-2 bg-slate border border-gray-700 rounded-lg shadow-2xl z-50 overflow-hidden flex flex-col">
+                                    <div className="max-h-56 overflow-y-auto custom-scrollbar">
+                                        {filteredExamCenters.length > 0 ? (
+                                            filteredExamCenters.map((center) => {
+                                                const isSelected = selectedCenters.includes(center.id);
+                                                return (
+                                                    <div 
+                                                        key={center.id}
+                                                        onClick={() => toggleExamCenter(center.id)}
+                                                        className={`p-3 text-sm font-bold cursor-pointer transition-colors border-b border-gray-800 last:border-0 flex items-center justify-between hover:bg-midnight ${
+                                                            isSelected ? 'bg-orange/10 text-orange' : 'text-white'
+                                                        }`}
+                                                    >
+                                                        <span>{center.label}</span>
+                                                        {isSelected && <Check size={16} />}
+                                                    </div>
+                                                );
+                                            })
+                                        ) : (
+                                            <div className="p-4 text-center text-xs text-gray-500 italic">
+                                                No centers in {centerRegionFilter}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                          </div>
                       </div>
                     </div>
                   </div>
                 } />
+
 
                 {/* --- PAYOUTS SETTINGS --- */}
                 <Route path="payouts" element={
