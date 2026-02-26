@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, X, Paperclip, FileText, Smile } from 'lucide-react';
+import { Send, X, Paperclip, FileText, Smile, Edit2, Check } from 'lucide-react'; // <-- Added Edit2
 import { useTranslation } from 'react-i18next';
 import { auth, storage } from '../../../firebase'; 
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
@@ -41,10 +41,14 @@ interface ChatInputProps {
   setReplyingTo: (msg: any | null) => void;
   receiverName: string;
   isDark: boolean;
+  // <-- NEW PROPS FOR EDITING -->
+  editingMessage?: any | null;
+  setEditingMessage?: (msg: any | null) => void;
+  editMessage?: (id: string, text: string) => void;
 }
 
 const MAX_CHARS = 1000;
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB (Adjust this number as needed)
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB 
 
 type StagedFile = {
   id: string;
@@ -63,7 +67,10 @@ export function ChatInput({
   replyingTo, 
   setReplyingTo, 
   receiverName, 
-  isDark 
+  isDark,
+  editingMessage,       // <-- ADDED
+  setEditingMessage,    // <-- ADDED
+  editMessage           // <-- ADDED
 }: ChatInputProps) {
   const { t } = useTranslation();
   
@@ -75,8 +82,6 @@ export function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stagedFilesRef = useRef<StagedFile[]>([]);
-  
-  // Ref for the entire chat input container to detect outside clicks
   const chatInputContainerRef = useRef<HTMLDivElement>(null);
 
   const isUploading = stagedFiles.some(f => !f.uploadedUrl);
@@ -92,9 +97,20 @@ export function ChatInput({
     }
   }, [inputText]);
 
-  // HARD RESET: When switching to a different student, clear everything to prevent accidental sends
+  // <-- NEW: AUTO-FILL TEXT WHEN EDITING STARTS -->
   useEffect(() => {
-    // 1. Clean up any currently staging or uploaded files to prevent orphaned files in Firebase
+    if (editingMessage && editingMessage.text) {
+      setInputText(editingMessage.text);
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+    } else if (!editingMessage && !replyingTo) {
+      setInputText('');
+    }
+  }, [editingMessage, replyingTo]);
+
+  // HARD RESET
+  useEffect(() => {
     stagedFilesRef.current.forEach(file => {
       if (file.task && file.progress < 100) file.task.cancel();
       if (file.uploadedUrl && file.storagePath) {
@@ -103,28 +119,27 @@ export function ChatInput({
       if (file.previewUrl) URL.revokeObjectURL(file.previewUrl);
     });
 
-    // 2. Reset all states back to default
     setStagedFiles([]);
     setInputText('');
     setShowEmojiPicker(false);
     setReplyingTo(null);
+    if (setEditingMessage) setEditingMessage(null); // <-- CLEAR EDIT STATE ON SWITCH
 
-    // 3. Reset the text area height back to normal
     if (textareaRef.current) {
       textareaRef.current.style.height = '44px';
     }
-  }, [receiverName, setReplyingTo]);
+  }, [receiverName, setReplyingTo, setEditingMessage]);
 
-  // Handle clicking outside the ChatInput or pressing Escape
+  // Escape Key / Click Outside handler
   useEffect(() => {
     const handleOutsideClickAndEsc = (event: MouseEvent | KeyboardEvent) => {
-      // 1. Handle Escape Key
       if (event.type === 'keydown' && (event as KeyboardEvent).key === 'Escape') {
         setShowEmojiPicker(false);
+        // Optional: Pressing Escape also cancels edit mode
+        if (setEditingMessage) setEditingMessage(null); 
         return;
       }
 
-      // 2. Handle Click Outside
       if (
         event.type === 'mousedown' && 
         chatInputContainerRef.current && 
@@ -134,8 +149,7 @@ export function ChatInput({
       }
     };
 
-    // Only attach the listeners if the picker is actually open
-    if (showEmojiPicker) {
+    if (showEmojiPicker || editingMessage) {
       document.addEventListener('mousedown', handleOutsideClickAndEsc);
       document.addEventListener('keydown', handleOutsideClickAndEsc);
     }
@@ -144,7 +158,7 @@ export function ChatInput({
       document.removeEventListener('mousedown', handleOutsideClickAndEsc);
       document.removeEventListener('keydown', handleOutsideClickAndEsc);
     };
-  }, [showEmojiPicker]);
+  }, [showEmojiPicker, editingMessage, setEditingMessage]);
 
   useEffect(() => {
     const cleanupOrphanedFiles = () => {
@@ -210,60 +224,58 @@ export function ChatInput({
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-  const files = Array.from(e.target.files || []);
-  if (!files.length) return;
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
 
-  // 1. FILTER: Remove any files that exceed the size limit
-  const validSizeFiles = files.filter(file => file.size <= MAX_FILE_SIZE);
-  const oversizedCount = files.length - validSizeFiles.length;
+    const validSizeFiles = files.filter(file => file.size <= MAX_FILE_SIZE);
+    const oversizedCount = files.length - validSizeFiles.length;
 
-  if (oversizedCount > 0) {
-    setFileWarning(t('chat.fileTooLarge', `${oversizedCount} file(s) were too large. Max size is 10MB.`));
-    setTimeout(() => setFileWarning(null), 4000);
-  }
+    if (oversizedCount > 0) {
+      setFileWarning(t('chat.fileTooLarge', `${oversizedCount} file(s) were too large. Max size is 10MB.`));
+      setTimeout(() => setFileWarning(null), 4000);
+    }
 
-  if (!validSizeFiles.length) {
-    e.target.value = '';
-    return;
-  }
+    if (!validSizeFiles.length) {
+      e.target.value = '';
+      return;
+    }
 
-  // 2. COUNT LIMIT: Only add files up to the 10-slot limit
-  const availableSlots = 10 - stagedFiles.length;
-  if (availableSlots <= 0) {
-    e.target.value = '';
-    return;
-  }
+    const availableSlots = 10 - stagedFiles.length;
+    if (availableSlots <= 0) {
+      e.target.value = '';
+      return;
+    }
 
-  const filesToAdd = validSizeFiles.slice(0, availableSlots);
-  
-  if (validSizeFiles.length > availableSlots) {
-    setFileWarning(t('chat.maxFilesLimit', `Only the first ${availableSlots} valid files were added.`));
-    setTimeout(() => setFileWarning(null), 4000);
-  }
+    const filesToAdd = validSizeFiles.slice(0, availableSlots);
+    
+    if (validSizeFiles.length > availableSlots) {
+      setFileWarning(t('chat.maxFilesLimit', `Only the first ${availableSlots} valid files were added.`));
+      setTimeout(() => setFileWarning(null), 4000);
+    }
 
-  const newStaged: StagedFile[] = filesToAdd.map(file => ({
-    id: Math.random().toString(36).substring(7),
-    file,
-    previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
-    progress: 0,
-    uploadedUrl: null,
-    storagePath: null,
-    task: null,
-    thumbnail: null
-  }));
+    const newStaged: StagedFile[] = filesToAdd.map(file => ({
+      id: Math.random().toString(36).substring(7),
+      file,
+      previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+      progress: 0,
+      uploadedUrl: null,
+      storagePath: null,
+      task: null,
+      thumbnail: null
+    }));
 
-  setStagedFiles(prev => [...prev, ...newStaged]);
-  
-  newStaged.forEach(async (staged) => {
-    const thumb = await generateThumbnail(staged.file);
-    setStagedFiles(current => 
-      current.map(f => f.id === staged.id ? { ...f, thumbnail: thumb } : f)
-    );
-    startBackgroundUpload(staged.id, staged.file);
-  });
-  
-  e.target.value = ''; 
-};
+    setStagedFiles(prev => [...prev, ...newStaged]);
+    
+    newStaged.forEach(async (staged) => {
+      const thumb = await generateThumbnail(staged.file);
+      setStagedFiles(current => 
+        current.map(f => f.id === staged.id ? { ...f, thumbnail: thumb } : f)
+      );
+      startBackgroundUpload(staged.id, staged.file);
+    });
+    
+    e.target.value = ''; 
+  };
 
   const removeFile = (id: string) => {
     const fileToRemove = stagedFiles.find(f => f.id === id);
@@ -277,6 +289,8 @@ export function ChatInput({
 
     if (fileToRemove.previewUrl) URL.revokeObjectURL(fileToRemove.previewUrl);
     setStagedFiles(prev => prev.filter(f => f.id !== id));
+
+    setShowEmojiPicker(false);
   };
 
   const handleSend = async () => {
@@ -285,6 +299,18 @@ export function ChatInput({
 
     const text = inputText.trim();
     
+    // <-- NEW: INTERCEPT SEND FOR EDITING -->
+    if (editingMessage && editMessage && setEditingMessage) {
+      if (text !== editingMessage.text) {
+        editMessage(editingMessage.id, text);
+      }
+      setEditingMessage(null);
+      setInputText('');
+      setShowEmojiPicker(false); // <-- ADD THIS LINE HERE!
+      if (textareaRef.current) textareaRef.current.style.height = '44px';
+      return;
+    }
+
     const attachments = stagedFiles.map(f => ({
       fileUrl: f.uploadedUrl!,
       fileName: f.file.name,
@@ -318,17 +344,12 @@ export function ChatInput({
       <AnimatePresence>
         {fileWarning && (
           <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
+            initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
             className="overflow-hidden w-full bg-red-500/10"
           >
             <div className="px-4 py-2 flex items-center justify-between text-xs font-medium text-red-500 border-b border-red-500/20">
               <span>{fileWarning}</span>
-              <button 
-                onClick={() => setFileWarning(null)} 
-                className="p-1 hover:bg-red-500/20 rounded-full transition-colors"
-              >
+              <button onClick={() => setFileWarning(null)} className="p-1 hover:bg-red-500/20 rounded-full transition-colors">
                 <X size={14} />
               </button>
             </div>
@@ -401,12 +422,13 @@ export function ChatInput({
         )}
       </AnimatePresence>
 
+      {/* <-- THE NEW BANNERS CONTAINER --> */}
       <AnimatePresence initial={false}>
-        {replyingTo && (
+        
+        {/* REPLYING BANNER */}
+        {replyingTo && !editingMessage && (
           <motion.div 
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
+            initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
             className="overflow-hidden"
           >
@@ -418,7 +440,39 @@ export function ChatInput({
                 <span className={`truncate text-xs ${textMuted}`}>{replyingTo.text || 'File'}</span>
               </div>
               <button 
-                onClick={() => setReplyingTo(null)} 
+                onClick={() => {
+                  setReplyingTo(null);
+                  setShowEmojiPicker(false); // <-- Added here!
+                }} 
+                className={`p-1.5 rounded-full transition-colors ${isDark ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-black/5 text-gray-500'}`}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* <-- EDITING BANNER --> */}
+        {editingMessage && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="overflow-hidden"
+          >
+            <div className={`flex items-center justify-between px-4 py-2 text-sm border-b ${borderTheme}`}>
+              <div className="flex flex-col border-l-4 border-primary pl-3 overflow-hidden flex-1 mr-4">
+                <span className="font-bold text-[11px] mb-0.5 text-primary uppercase flex items-center gap-1.5">
+                  <Edit2 size={12} /> Edit Message
+                </span>
+                <span className={`truncate text-xs ${textMuted}`}>{editingMessage.text}</span>
+              </div>
+              <button 
+                onClick={() => {
+                  setEditingMessage?.(null);
+                  setInputText('');
+                  setShowEmojiPicker(false); // <-- Add it to the cancel button too!
+                  if (textareaRef.current) textareaRef.current.style.height = '44px';
+                }} 
                 className={`p-1.5 rounded-full transition-colors ${isDark ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-black/5 text-gray-500'}`}
               >
                 <X size={16} />
@@ -451,10 +505,11 @@ export function ChatInput({
           
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading || stagedFiles.length >= 10}
+            // <-- DISABLE ATTACHMENTS WHILE EDITING -->
+            disabled={isUploading || stagedFiles.length >= 10 || !!editingMessage}
             className={`p-2.5 rounded-xl transition-colors shrink-0 flex items-center justify-center h-[44px] 
               ${isDark ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-black/5 text-gray-500'}
-              ${(isUploading || stagedFiles.length >= 10) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              ${(isUploading || stagedFiles.length >= 10 || !!editingMessage) ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             <Paperclip size={20} />
           </button>
@@ -468,7 +523,7 @@ export function ChatInput({
             <Smile size={20} />
           </button>
 
-          <div className={`flex-1 flex flex-col min-h-[44px] border rounded-xl overflow-hidden focus-within:ring-1 focus-within:ring-primary ${borderTheme} ${isDark ? 'bg-transparent' : 'bg-transparent'}`}>
+          <div className={`flex-1 flex flex-col min-h-[44px] border rounded-xl overflow-hidden focus-within:ring-1 focus-within:ring-primary ${borderTheme} bg-transparent`}>
             <textarea
               ref={textareaRef}
               value={inputText}
@@ -480,7 +535,7 @@ export function ChatInput({
                   handleSend();
                 }
               }}
-              placeholder={t('chat.typeMessage', 'Type a message...')}
+              placeholder={editingMessage ? "Edit message..." : t('chat.typeMessage', 'Type a message...')}
               className={`w-full bg-transparent px-4 py-3 text-sm resize-none focus:outline-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] ${isDark ? 'text-white' : 'text-gray-900'}`}
               rows={1}
               style={{ height: '44px' }}
@@ -512,7 +567,7 @@ export function ChatInput({
             disabled={(!inputText.trim() && stagedFiles.length === 0) || isUploading}
             className="p-3 bg-primary text-white rounded-xl hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0 shadow-sm flex items-center justify-center h-[44px]"
           >
-            <Send size={18} />
+            {editingMessage ? <Check size={18} /> : <Send size={18} />}
           </button>
         </div>
       </div>

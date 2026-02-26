@@ -13,6 +13,7 @@ interface MessageListProps {
   activeMenuId: string | null;
   setActiveMenuId: (id: string | null) => void;
   setReplyingTo: (msg: any) => void;
+  setEditingMessage: (msg: any) => void; //
   deleteForEveryone: (id: string, attachments?: any[]) => void;
   deleteForMe: (id: string) => void;
   markAsRead: (id: string) => void;
@@ -20,7 +21,8 @@ interface MessageListProps {
 
 export function MessageList({
   messages, isLoading, receiverName, isDark, activeMenuId, setActiveMenuId,
-  setReplyingTo, deleteForEveryone, deleteForMe, markAsRead
+  setReplyingTo, deleteForEveryone, deleteForMe, markAsRead,
+  setEditingMessage
 }: MessageListProps) {
   
   const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -135,6 +137,7 @@ export function MessageList({
                     activeMenuId={activeMenuId}
                     setActiveMenuId={setActiveMenuId}
                     setReplyingTo={setReplyingTo}
+                    setEditingMessage={setEditingMessage}
                     deleteForEveryone={deleteForEveryone}
                     deleteForMe={handleLocalDeleteForMe}
                     isDeleting={isDeleting} 

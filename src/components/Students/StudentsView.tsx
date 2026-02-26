@@ -5,6 +5,7 @@ import { Plus, Users } from 'lucide-react';
 import { StudentCard } from './StudentCard';
 // 2. ADDED: Import the new modal
 import { QuickChatModal } from '../Modals/QuickChatModal';
+import { useMessages } from '../../hooks/useMessages';
 
 interface Props {
   students: any[];
@@ -18,6 +19,7 @@ interface Props {
 export function StudentsView({ students, updateBalance, openStudentModal, onSendInvite, isDark = true }: Props) {
   // 4. ADDED: State to control the floating chat window
   const [chatStudent, setChatStudent] = useState<any | null>(null);
+  const { messages } = useMessages();
 
   return (
     <div className="space-y-6 transition-all duration-300"> 
@@ -32,19 +34,25 @@ export function StudentsView({ students, updateBalance, openStudentModal, onSend
       
       {students && students.length > 0 ? (
         <div className="grid gap-4">
-          {students.map((stu: any) => (
+          {students.map(stu => {
+          // <-- 2. ADD THESE TWO LINES to calculate if this specific student has unread messages
+          const chatId = auth.currentUser && stu.uid ? [auth.currentUser.uid, stu.uid].sort().join('_') : '';
+          const hasUnread = messages.some(m => m.chatId === chatId && !m.isRead && m.receiverId === auth.currentUser?.uid);
+
+          return (
             <StudentCard 
               key={stu.id} 
               stu={stu} 
               updateBalance={updateBalance} 
-              openStudentModal={openStudentModal} 
-              onSendInvite={onSendInvite} 
-              // 5. ADDED: Pass the trigger down to the card
-              onOpenChat={() => setChatStudent(stu)} 
+              openStudentModal={openStudentModal}
+              onSendInvite={onSendInvite}
+              onOpenChat={() => setChatStudent(stu)}
               isDark={isDark}
+              hasUnread={hasUnread} // <-- 3. PASS IT TO THE CARD
             />
-          ))}
-        </div>
+          );
+        })}
+      </div>
       ) : (
         <div className="bg-slate rounded-2xl p-12 text-center border border-gray-800 animate-in fade-in zoom-in-[0.98] duration-300 transition-colors">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-midnight rounded-full mb-4 border border-gray-800 transition-colors duration-300">
@@ -67,11 +75,13 @@ export function StudentsView({ students, updateBalance, openStudentModal, onSend
       <QuickChatModal 
         isOpen={!!chatStudent}
         onClose={() => setChatStudent(null)}
-        // Force it to use the Teacher UID + Student Profile ID
-        activeChatId={chatStudent && auth.currentUser ? [auth.currentUser.uid, chatStudent.id].sort().join('_') : ''}
-        receiverId={chatStudent?.id || ''}
-        receiverName={chatStudent?.name || ''}
-        isDark={!!isDark}
+        // THE FIX: Return an empty string '' instead of undefined
+        activeChatId={chatStudent && auth.currentUser && chatStudent.uid 
+          ? [auth.currentUser.uid, chatStudent.uid].sort().join('_') 
+          : ''} 
+        receiverId={chatStudent?.uid || ''} 
+        receiverName={chatStudent?.name || 'Student'}
+        isDark={isDark}
       />
     </div>
   );

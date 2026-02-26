@@ -22,6 +22,7 @@ export function ChatBox({ activeChatId, receiverId, receiverName, isDark, onBack
   // These two small states are all the parent needs to manage now
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<any | null>(null);
+  const [editingMessage, setEditingMessage] = useState<any | null>(null);
   
   const { 
     messages,
@@ -30,7 +31,8 @@ export function ChatBox({ activeChatId, receiverId, receiverName, isDark, onBack
     sendAttachments, 
     markAsRead, 
     deleteForMe, 
-    deleteForEveryone 
+    deleteForEveryone,
+    editMessage
   } = useMessages(activeChatId);
 
   const borderTheme = isDark ? 'border-gray-800' : 'border-gray-200';
@@ -69,6 +71,7 @@ export function ChatBox({ activeChatId, receiverId, receiverName, isDark, onBack
         activeMenuId={activeMenuId}
         setActiveMenuId={setActiveMenuId}
         setReplyingTo={setReplyingTo}
+        setEditingMessage={setEditingMessage}
         deleteForEveryone={deleteForEveryone}
         deleteForMe={deleteForMe}
         markAsRead={markAsRead}
@@ -86,6 +89,9 @@ export function ChatBox({ activeChatId, receiverId, receiverName, isDark, onBack
         
         replyingTo={replyingTo}
         setReplyingTo={setReplyingTo}
+        editingMessage={editingMessage} // <-- 3. PASS TO INPUT
+        setEditingMessage={setEditingMessage} // <-- 4. PASS TO INPUT
+        editMessage={editMessage}
         receiverName={receiverName}
         isDark={isDark}
       />

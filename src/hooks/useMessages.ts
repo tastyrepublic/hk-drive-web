@@ -26,15 +26,21 @@ export function useMessages(activeChatId?: string) {
 
     let q;
     if (activeChatId) {
-      // KEEP orderBy here: The ChatBox needs messages in chronological order.
-      q = query(collection(db, 'messages'), where('chatId', '==', activeChatId), orderBy('createdAt', 'asc'));
+      // THE PRO WAY: Added orderBy back for perfect server-side sorting
+      q = query(
+        collection(db, 'messages'), 
+        where('chatId', '==', activeChatId),
+        where('participants', 'array-contains', auth.currentUser.uid),
+        orderBy('createdAt', 'asc') // <-- ADD THIS BACK
+      );
     } else {
-      // REMOVE orderBy here: We only need to fetch the messages to count the red dots!
-      q = query(collection(db, 'messages'), where('receiverId', '==', auth.currentUser.uid));
+      q = query(
+        collection(db, 'messages'), 
+        where('receiverId', '==', auth.currentUser.uid)
+      );
     }
 
     // --- THE PRO FIX: 50ms Debounce ---
-    // This protects the Firebase SDK from internal assertion crashes due to rapid unmounts
     let unsubscribe: (() => void) | undefined;
     
     const timeoutId = setTimeout(() => {
@@ -56,20 +62,18 @@ export function useMessages(activeChatId?: string) {
         setIsLoading(false);
       
         }, (error) => {
-        // ADD THIS ERROR HANDLER:
+        // Look in your browser console for the Index link if this fires!
         console.error("🔥 Live Listener Error:", error.message);
       });
     }, 50);
 
-    // CLEANUP: If the user clicks away before 50ms, the timeout is cleared 
-    // and the buggy Firebase connection is never even attempted.
     return () => {
       clearTimeout(timeoutId);
       if (unsubscribe) {
         unsubscribe();
       }
     };
-  }, [activeChatId]);
+  }, [activeChatId, auth.currentUser?.uid]);
 
   const sendMessage = async (receiverId: string, text: string, replyTo?: any) => {
     if (!auth.currentUser || !text.trim()) return;
@@ -77,6 +81,7 @@ export function useMessages(activeChatId?: string) {
 
     const messageData: any = {
       chatId: finalChatId,
+      participants: [auth.currentUser.uid, receiverId], // <-- THE PRO FIX IS HERE
       senderId: auth.currentUser.uid,
       receiverId,
       text,
@@ -109,10 +114,11 @@ export function useMessages(activeChatId?: string) {
 
     const messageData: any = {
       chatId: finalChatId,
+      participants: [auth.currentUser.uid, receiverId], // <-- THE PRO FIX IS HERE
       senderId: auth.currentUser.uid,
       receiverId,
       text: text || '',
-      attachments, // Pure array, no single file fallbacks
+      attachments, 
       isRead: false,
       isDeleted: false,
       deletedFor: [],
@@ -134,6 +140,14 @@ export function useMessages(activeChatId?: string) {
     await updateDoc(doc(db, 'messages', messageId), { isRead: true });
   };
 
+  const editMessage = async (messageId: string, newText: string) => {
+    if (!auth.currentUser || !newText.trim()) return;
+    await updateDoc(doc(db, 'messages', messageId), { 
+      text: newText,
+      isEdited: true 
+    });
+  };
+
   const deleteForMe = async (messageId: string) => {
     if (!auth.currentUser) return;
     await updateDoc(doc(db, 'messages', messageId), {
@@ -141,13 +155,12 @@ export function useMessages(activeChatId?: string) {
     });
   };
 
-  // Cleaned up: Only maps through the array to delete files
   const deleteForEveryone = async (messageId: string, attachments?: any[]) => {
     try {
       await updateDoc(doc(db, 'messages', messageId), { 
         isDeleted: true,
         text: null,
-        attachments: null // Wipe the array from the database
+        attachments: null 
       });
 
       if (attachments && attachments.length > 0) {
@@ -170,7 +183,8 @@ export function useMessages(activeChatId?: string) {
     unreadCount,
     isLoading, 
     sendMessage, 
-    sendAttachments, 
+    sendAttachments,
+    editMessage,
     markAsRead, 
     deleteForMe, 
     deleteForEveryone 

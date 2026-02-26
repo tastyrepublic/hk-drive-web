@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, CheckCheck, Clock, Ban, ChevronDown, FileText, Download, X } from 'lucide-react';
+import { Check, CheckCheck, Clock, Ban, ChevronDown, FileText, Download, X, Edit2, Reply, Trash2 } from 'lucide-react'; // <-- Added Edit2
 import { useTranslation } from 'react-i18next';
 import { auth } from '../../../firebase';
 import { useFloating, offset, flip, shift } from '@floating-ui/react';
@@ -19,9 +19,11 @@ interface MessageBubbleProps {
   isDeleting: boolean;
   onJumpToReply: (id: string) => void;
   isHighlighted: boolean;
+  setEditingMessage: (msg: any) => void; // <-- ADDED PROP
 }
 
 const DELETE_TIME_LIMIT = 60 * 60 * 1000; 
+const EDIT_TIME_LIMIT = 15 * 60 * 1000; // <-- 15 minutes in milliseconds
 
 const formatTime = (timestamp: number | null | undefined) => {
   if (!timestamp) return '';
@@ -41,43 +43,21 @@ const getDateDividerLabel = (timestamp: number | null | undefined, t: any) => {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
 };
 
-// --- NEW PRO COMPONENT DEFINED OUTSIDE ---
+// --- PRO COMPONENT DEFINED OUTSIDE ---
 const ImageAttachment = ({ url, thumbnail, isSingle, onClick }: any) => {
   const [isLoaded, setIsLoaded] = useState(false);
 
   return (
-    <div 
-      onClick={onClick}
-      className="relative group overflow-hidden rounded-lg bg-black/10 cursor-pointer"
-    >
-      {/* 1. THE PRO THUMBNAIL: Renders instantly from Firestore text data */}
+    <div onClick={onClick} className="relative group overflow-hidden rounded-lg bg-black/10 cursor-pointer">
       {thumbnail && (
-        <img 
-          src={thumbnail} 
-          alt="blur" 
-          className={`absolute inset-0 w-full h-full object-cover blur-md scale-110 ${isSingle ? 'max-h-[280px]' : 'h-[140px]'}`} 
-        />
+        <img src={thumbnail} alt="blur" className={`absolute inset-0 w-full h-full object-cover blur-md scale-110 ${isSingle ? 'max-h-[280px]' : 'h-[140px]'}`} />
       )}
-      
-      {/* 2. THE HIGH-RES IMAGE: Fades in smoothly over the thumbnail when ready */}
       <img 
-        src={url} 
-        alt="attachment" 
-        onLoad={() => setIsLoaded(true)}
-        className={`relative z-10 w-full object-cover block transition-opacity duration-500 ${
-          isLoaded ? 'opacity-100' : 'opacity-0'
-        } ${isSingle ? 'h-auto max-h-[280px]' : 'h-[140px]'}`} 
+        src={url} alt="attachment" onLoad={() => setIsLoaded(true)}
+        className={`relative z-10 w-full object-cover block transition-opacity duration-500 ${isLoaded ? 'opacity-100' : 'opacity-0'} ${isSingle ? 'h-auto max-h-[280px]' : 'h-[140px]'}`} 
       />
-      
-      {/* Hover Download Button */}
       <div className="absolute inset-0 z-20 bg-black/0 group-hover:bg-black/20 transition-all flex items-end justify-end p-2 opacity-0 group-hover:opacity-100">
-        <a
-          href={url}
-          download
-          onClick={(e) => e.stopPropagation()} 
-          className="p-1.5 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md transition-all shadow-sm"
-          title="Download Image"
-        >
+        <a href={url} download onClick={(e) => e.stopPropagation()} className="p-1.5 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md transition-all shadow-sm" title="Download Image">
           <Download size={14} />
         </a>
       </div>
@@ -89,9 +69,7 @@ const ImageAttachment = ({ url, thumbnail, isSingle, onClick }: any) => {
 export function MessageBubble({ 
   msg, prevMsg, receiverName, isDark, 
   activeMenuId, setActiveMenuId, setReplyingTo, deleteForEveryone, deleteForMe,
-  isDeleting,
-  onJumpToReply,
-  isHighlighted
+  isDeleting, onJumpToReply, isHighlighted, setEditingMessage 
 }: MessageBubbleProps) {
   const { t } = useTranslation();
   
@@ -102,8 +80,11 @@ export function MessageBubble({
   const showDateDivider = !prevMsg || !isSameDay(msg.createdAt, prevMsg.createdAt);
   const isPrevSame = prevMsg?.senderId === msg.senderId;
   const canDeleteAll = isMine && (Date.now() - (msg.createdAt || Date.now()) < DELETE_TIME_LIMIT);
-  const borderTheme = isDark ? 'border-gray-800' : 'border-gray-200';
+  
+  // <-- EDIT LOGIC STARTS HERE -->
+  const canEdit = isMine && !msg.isDeleted && msg.text && (Date.now() - (msg.createdAt || Date.now()) < EDIT_TIME_LIMIT);
 
+  const borderTheme = isDark ? 'border-gray-800' : 'border-gray-200';
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
 
   const { refs, floatingStyles } = useFloating({
@@ -181,12 +162,8 @@ export function MessageBubble({
                           {msg.attachments.map((att: any, index: number) => (
                             att.fileType?.startsWith('image/') ? (
                               <ImageAttachment 
-                                key={index}
-                                url={att.fileUrl}
-                                thumbnail={att.thumbnail} 
-                                fileName={att.fileName}
-                                isSingle={msg.attachments.length === 1}
-                                onClick={() => setEnlargedImage(att.fileUrl)}
+                                key={index} url={att.fileUrl} thumbnail={att.thumbnail} fileName={att.fileName}
+                                isSingle={msg.attachments.length === 1} onClick={() => setEnlargedImage(att.fileUrl)}
                               />
                             ) : (
                               <a key={index} href={att.fileUrl} download className="flex items-center gap-3 p-3 rounded bg-black/10 dark:bg-white/10 hover:bg-black/20 transition-colors group/file relative pr-8 w-full col-span-full">
@@ -202,7 +179,16 @@ export function MessageBubble({
                         </div>
                       )}
 
-                      {msg.text && <span className="whitespace-pre-wrap break-words break-all mt-1">{msg.text}</span>}
+                      {/* <-- ADD THIS BLOCK BACK: THE ACTUAL MESSAGE TEXT --> */}
+                      {msg.text && (
+                        <span className="whitespace-pre-wrap break-words break-all mt-1">
+                          {msg.text}
+                          {msg.isEdited && (
+                            <span className="text-[10px] opacity-70 ml-2 italic">(edited)</span>
+                          )}
+                        </span>
+                      )}
+                      
                     </div>
                   </div>
                 )}
@@ -235,11 +221,33 @@ export function MessageBubble({
                   <div ref={refs.setFloating} style={{ ...floatingStyles, zIndex: 9999 }}>
                     <motion.div 
                       initial={{ opacity: 0, scale: 0.95, y: -5 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: -5 }}
-                      className={`w-36 rounded-xl shadow-2xl border ${isDark ? 'bg-[#1e293b] border-gray-700' : 'bg-white border-gray-200'} overflow-hidden`}
+                      className={`w-40 rounded-xl shadow-2xl border flex flex-col ${isDark ? 'bg-[#1e293b] border-gray-700' : 'bg-white border-gray-200'} overflow-hidden`}
                     >
-                        <button onClick={() => { setReplyingTo(msg); setActiveMenuId(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-black/5 transition-colors">Reply</button>
-                        {canDeleteAll && <button onClick={() => { deleteForEveryone(msg.id, msg.attachments); setActiveMenuId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors font-medium">Delete for all</button>}
-                        <button onClick={() => { deleteForMe(msg.id); setActiveMenuId(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-black/5 transition-colors">Delete for me</button>
+                        <button onClick={() => { setReplyingTo(msg); setActiveMenuId(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center gap-2">
+                          <Reply size={14} /> Reply
+                        </button>
+                        
+                        {canEdit && (
+                          <button 
+                            onClick={() => { 
+                              setEditingMessage(msg); 
+                              setActiveMenuId(null); 
+                            }} 
+                            className="w-full text-left px-4 py-2.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center gap-2"
+                          >
+                            <Edit2 size={14} /> Edit
+                          </button>
+                        )}
+
+                        {canDeleteAll && (
+                          <button onClick={() => { deleteForEveryone(msg.id, msg.attachments); setActiveMenuId(null); }} className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors font-medium flex items-center gap-2">
+                            <Trash2 size={14} /> Delete for all
+                          </button>
+                        )}
+                        
+                        <button onClick={() => { deleteForMe(msg.id); setActiveMenuId(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center gap-2">
+                          <Trash2 size={14} /> Delete for me
+                        </button>
                     </motion.div>
                   </div>
                 )}
@@ -266,12 +274,9 @@ export function MessageBubble({
                     </button>
 
                     <motion.img
-                      initial={{ scale: 0.9, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      exit={{ scale: 0.9, opacity: 0 }}
+                      initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
                       transition={{ type: "spring", damping: 25, stiffness: 300 }}
-                      src={enlargedImage}
-                      alt="Enlarged attachment"
+                      src={enlargedImage} alt="Enlarged attachment"
                       className="max-w-full max-h-full object-contain rounded-lg shadow-2xl cursor-default"
                       onClick={(e) => e.stopPropagation()} 
                     />

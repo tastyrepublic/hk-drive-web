@@ -9,12 +9,12 @@ interface Props {
   updateBalance: (id: string, newBalance: number) => void;
   openStudentModal: (stu: any) => void;
   onSendInvite: (student: any) => void;
-  // ADDED: The new prop to trigger the chat modal
   onOpenChat?: () => void;
   isDark?: boolean;
+  hasUnread?: boolean; // <-- ADD THIS
 }
 
-export function StudentCard({ stu, updateBalance, openStudentModal, onSendInvite, onOpenChat, isDark }: Props) {
+export function StudentCard({ stu, updateBalance, openStudentModal, onSendInvite, onOpenChat, hasUnread }: Props) {
   // 1. Determine Status
   const isLinked = !!stu.uid;
   const isPending = !isLinked && !!stu.inviteToken; 
@@ -36,7 +36,11 @@ export function StudentCard({ stu, updateBalance, openStudentModal, onSendInvite
       {/* Top Section: Profile & Status */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-4">
-          <Avatar name={stu.name} size="lg" isDark={isDark} />
+          <Avatar 
+         name={stu.name} 
+         size="lg" // (or whatever size you currently have it set to)
+         hasUnread={hasUnread} // <-- ADD THIS PROP TO THE AVATAR
+      />
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-bold text-lg text-white">{stu.name}</h3>
