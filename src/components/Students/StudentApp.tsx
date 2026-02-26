@@ -312,8 +312,8 @@ export function StudentApp({ userEmail, theme, toggleTheme, showToast }: Props) 
         <QuickChatModal 
             isOpen={isChatOpen}
             onClose={() => setIsChatOpen(false)}
-            // Force it to use the Teacher UID + Student Profile ID
-            activeChatId={activeProfile?.teacherId && activeProfile?.id ? [activeProfile.teacherId, activeProfile.id].sort().join('_') : ''}
+            // CLEAN ARCHITECTURE: Use Teacher UID + Student's actual Auth UID
+            activeChatId={activeProfile?.teacherId && auth.currentUser ? [activeProfile.teacherId, auth.currentUser.uid].sort().join('_') : ''}
             receiverId={activeProfile?.teacherId || ''}
             receiverName={activeInstructor?.name || 'Instructor'}
             isDark={isDark}

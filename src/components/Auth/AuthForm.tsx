@@ -7,7 +7,7 @@ import {
   signInWithPhoneNumber,
   type ConfirmationResult
 } from 'firebase/auth';
-import { setDoc, doc, getDoc, collection, query, where, getDocs, limit } from 'firebase/firestore'; 
+import { setDoc, doc, getDoc } from 'firebase/firestore'; 
 import { 
   Loader2, Car, Check, User, Phone, Mail, Lock, Key, ArrowLeft, 
   ShieldCheck, ArrowRight 
@@ -117,21 +117,27 @@ export function AuthForm({ role, onLoginSuccess, onBack, theme }: Props) {
     setLoading(true);
     setError('');
 
-    // 1. PRE-FLIGHT DB CHECK
+    // 1. PRE-FLIGHT DB CHECK (Secure Phone Book Method)
     try {
         const rawPhone = phone.trim().replace(/\s+/g, '');
         const formattedPhone = formatPhoneForFirebase(rawPhone);
         
-        const q1 = query(collection(db, "users"), where("phone", "==", formattedPhone), limit(1));
-        const q2 = query(collection(db, "users"), where("phone", "==", rawPhone), limit(1));
+        const phoneDoc = await getDoc(doc(db, "phone_directory", formattedPhone));
 
-        const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
-        const userExists = !snap1.empty || !snap2.empty;
-
-        if (!userExists) {
+        if (!phoneDoc.exists()) {
             setLoading(false);
-            setError("Number not registered. Please claim your Invite Link first.");
+            setError("Number not registered.");
             return; 
+        }
+
+        // --- THE "CART BEFORE THE HORSE" CHECK ---
+        const isInviteURL = !!new URLSearchParams(window.location.search).get('invite');
+
+        // If they aren't claimed yet, AND they aren't currently using an invite link: Block them!
+        if (phoneDoc.data().claimed === false && !isInviteURL) {
+            setLoading(false);
+            setError("Account not activated! Please click the secure Invite Link sent by your instructor to log in for the first time.");
+            return;
         }
 
     } catch (err) {

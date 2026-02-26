@@ -26,8 +26,9 @@ export function MessagesView({ isDark, students }: Props) {
 
   const selectedStudent = students?.find((s: any) => s.id === selectedStudentId);
   
-  const activeChatId = selectedStudent && auth.currentUser 
-    ? [auth.currentUser.uid, selectedStudent.id].sort().join('_') 
+  // CLEAN ARCHITECTURE: Use the student's actual UID!
+  const activeChatId = selectedStudent && auth.currentUser && selectedStudent.uid
+    ? [auth.currentUser.uid, selectedStudent.uid].sort().join('_') 
     : undefined;
 
   const bgTheme = isDark ? 'bg-slate border-gray-800' : 'bg-white border-gray-200';
@@ -53,7 +54,7 @@ export function MessagesView({ isDark, students }: Props) {
            
            <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
               {filteredStudents.map((student: any) => {
-                 const chatId = auth.currentUser ? [auth.currentUser.uid, student.id].sort().join('_') : '';
+                 const chatId = auth.currentUser && student.uid ? [auth.currentUser.uid, student.uid].sort().join('_') : '';
                  const hasUnread = messages.some(m => m.chatId === chatId && !m.isRead && m.receiverId === auth.currentUser?.uid);
                  const isSelected = selectedStudentId === student.id;
 
@@ -95,7 +96,7 @@ export function MessagesView({ isDark, students }: Props) {
            {selectedStudentId && selectedStudent ? (
              <ChatBox 
                activeChatId={activeChatId}
-               receiverId={selectedStudent.id}
+               receiverId={selectedStudent.uid || ''} // Send directly to their real UID
                receiverName={selectedStudent.name || 'Student'}
                isDark={isDark}
                onBack={() => setSelectedStudentId(null)}

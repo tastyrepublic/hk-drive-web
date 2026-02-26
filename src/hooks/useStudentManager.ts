@@ -1,8 +1,15 @@
 import { useState } from 'react';
 import { db } from '../firebase';
 import { 
-  collection, doc, addDoc, updateDoc, deleteDoc, Timestamp 
+  collection, doc, addDoc, updateDoc, deleteDoc, Timestamp,
+  setDoc, query, where, getDocs, getDoc // <-- Added getDoc here!
 } from 'firebase/firestore';
+
+// HELPER: Formats phone numbers for the secure directory
+const formatPhoneForDirectory = (phone: string) => {
+    const cleanPhone = phone.replace(/\D/g, ''); 
+    return cleanPhone.length === 8 ? `+852${cleanPhone}` : `+${cleanPhone}`;
+};
 
 export function useStudentManager(
   user: any, 
@@ -31,7 +38,9 @@ export function useStudentManager(
     setLoading(true);
     try {
       const linkedUid = (studentForm as any).linkedUid;
+      const originalStudent = isEditing && studentForm.id ? students.find(s => s.id === studentForm.id) : null;
       
+      // Save to Students Collection
       if (isEditing && studentForm.id) {
         await updateDoc(doc(db, "students", studentForm.id), {
           name: studentForm.name,
@@ -55,6 +64,35 @@ export function useStudentManager(
         });
         showToast("Student added");
       }
+
+      // --- NEW: SECURE PHONE BOOK LOGIC (TypeScript Fixed) ---
+      const formattedPhone = formatPhoneForDirectory(studentForm.phone);
+      
+      // 1. Explicitly define phoneRef so TypeScript knows what it is
+      const phoneRef = doc(db, "phone_directory", formattedPhone);
+      
+      // 2. Cast .data() to 'any' to satisfy TypeScript's strict mode
+      const phoneSnap = await getDoc(phoneRef);
+      const isAlreadyClaimed = phoneSnap.exists() && (phoneSnap.data() as any)?.claimed === true;
+
+      // 3. Safely set the phonebook entry
+      await setDoc(phoneRef, { 
+          active: true,
+          claimed: isAlreadyClaimed || !!linkedUid 
+      });
+
+      // 4. Cleanup old number if the teacher edited it
+      if (isEditing && originalStudent && originalStudent.phone !== studentForm.phone) {
+          // Check if ANY other teacher is still using the old number
+          const q = query(collection(db, "students"), where("phone", "==", originalStudent.phone));
+          const snap = await getDocs(q);
+          
+          if (snap.empty) {
+              const oldFormatted = formatPhoneForDirectory(originalStudent.phone);
+              await deleteDoc(doc(db, "phone_directory", oldFormatted));
+          }
+      }
+
       onSuccess();
     } catch (e) {
       console.error(e);
@@ -68,7 +106,23 @@ export function useStudentManager(
   const deleteStudent = async (id: string, onSuccess: () => void) => {
     setLoading(true);
     try {
+      // Grab the phone number BEFORE deleting the student record
+      const studentToDelete = students.find((s: any) => s.id === id);
+
       await deleteDoc(doc(db, "students", id));
+      
+      // --- NEW: SECURE PHONE BOOK CLEANUP ---
+      if (studentToDelete?.phone) {
+          // Check if ANY other teacher is still using this student's number
+          const q = query(collection(db, "students"), where("phone", "==", studentToDelete.phone));
+          const snap = await getDocs(q);
+          
+          if (snap.empty) {
+              const formattedPhone = formatPhoneForDirectory(studentToDelete.phone);
+              await deleteDoc(doc(db, "phone_directory", formattedPhone));
+          }
+      }
+
       showToast("Student deleted");
       onSuccess();
     } catch (e) {

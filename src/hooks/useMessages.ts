@@ -26,9 +26,11 @@ export function useMessages(activeChatId?: string) {
 
     let q;
     if (activeChatId) {
+      // KEEP orderBy here: The ChatBox needs messages in chronological order.
       q = query(collection(db, 'messages'), where('chatId', '==', activeChatId), orderBy('createdAt', 'asc'));
     } else {
-      q = query(collection(db, 'messages'), where('receiverId', '==', auth.currentUser.uid), orderBy('createdAt', 'asc'));
+      // REMOVE orderBy here: We only need to fetch the messages to count the red dots!
+      q = query(collection(db, 'messages'), where('receiverId', '==', auth.currentUser.uid));
     }
 
     // --- THE PRO FIX: 50ms Debounce ---
@@ -52,6 +54,10 @@ export function useMessages(activeChatId?: string) {
         const unread = loaded.filter(m => !m.isRead && m.receiverId === auth.currentUser?.uid).length;
         setUnreadCount(unread);
         setIsLoading(false);
+      
+        }, (error) => {
+        // ADD THIS ERROR HANDLER:
+        console.error("🔥 Live Listener Error:", error.message);
       });
     }, 50);
 

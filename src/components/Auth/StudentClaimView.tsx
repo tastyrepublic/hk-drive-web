@@ -5,7 +5,7 @@ import {
   signInWithPhoneNumber,
   type ConfirmationResult
 } from 'firebase/auth';
-import { doc, runTransaction } from 'firebase/firestore'; 
+import { doc, runTransaction, updateDoc } from 'firebase/firestore'; 
 import { 
   Loader2, Phone, Link as LinkIcon,
   Sun, Moon, ArrowRight, ChevronLeft, ShieldCheck, Check,
@@ -146,6 +146,7 @@ export function StudentClaimView({
         const studentDocRef = doc(db, "students", inviteCode);
         const userDocRef = doc(db, "users", user.uid);
 
+        // 1. Core linking transaction
         await runTransaction(db, async (transaction) => {
             const studentSnap = await transaction.get(studentDocRef);
             if (!studentSnap.exists()) throw new Error("Invite invalid.");
@@ -172,7 +173,21 @@ export function StudentClaimView({
             });
         });
 
+        // --- NEW: FLIP THE PHONEBOOK FLAG TO CLAIMED ---
+        // We do this immediately after the transaction succeeds, 
+        // while the loading spinner is still active!
+        const cleanPhone = studentData.phone.replace(/\D/g, '');
+        const formattedPhone = cleanPhone.length === 8 ? `+852${cleanPhone}` : `+${cleanPhone}`;
+        
+        await updateDoc(doc(db, "phone_directory", formattedPhone), { 
+            claimed: true 
+        });
+
+        // 2. Trigger Smooth UI Transition
         setStatus('success');
+        
+        // Wait 800ms so the user can register the visual success state 
+        // before the RootRouter instantly switches the view.
         setTimeout(() => onClaimSuccess(), 800);
 
     } catch (err: any) {
