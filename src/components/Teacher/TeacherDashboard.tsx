@@ -30,6 +30,7 @@ import { useLessonManager } from '../../hooks/useLessonManager';
 import { useStudentManager } from '../../hooks/useStudentManager';
 import { useNotifications } from '../../hooks/useNotifications';
 import { useMessages } from '../../hooks/useMessages';
+import { useHolidays } from '../../hooks/useHolidays';
 
 import { DEFAULT_VEHICLE_ID } from '../../constants/list';
 import { PAGE_VARIANTS, PAGE_TRANSITION } from '../../constants/animations';
@@ -96,9 +97,12 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
   const [autoFillDate, setAutoFillDate] = useState<Date | null>(null);
 
   // --- HOOKS ---
+  // Add 'holidays' as the 4th argument
+  const holidays = useHolidays();
+  
   const { 
-    saveLesson, deleteLesson, autoScheduleWeek, saveLoading: saveSlotLoading, validationMsg, setValidationMsg 
-  } = useLessonManager(user, slots, profile);
+    saveLesson, deleteLesson, autoScheduleWeek, copyWeekToNext, saveLoading: saveSlotLoading, validationMsg, setValidationMsg 
+  } = useLessonManager(user, slots, profile, holidays);
 
   const {
     saveStudent, 
@@ -525,6 +529,7 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
 
       {/* MAIN CONTENT */}
       <main className="max-w-4xl mx-auto p-4 sm:p-6 overflow-hidden relative">
+
         <AnimatePresence mode="wait">
             <motion.div
                 key={activeTab} 
@@ -544,6 +549,7 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
                           lessonDuration={Number(profile?.lessonDuration) || 45} 
                           onPublishDrafts={handlePublishDrafts} 
                           onOpenAutoFill={(date) => setAutoFillDate(date)} // <-- OPENS MODAL
+                          onCopyWeek={copyWeekToNext} //
                         />
                     } />
                     

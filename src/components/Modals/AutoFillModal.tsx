@@ -35,13 +35,21 @@ export function AutoFillModal({ isOpen, onClose, onGenerate, isGenerating, teach
   // --- FORCE SYNC WITH PROFILE SETTINGS ---
   useEffect(() => {
     if (isOpen) {
+        const defaultCenter = teacherExamCenters && teacherExamCenters.length > 0 ? teacherExamCenters[0] : '';
+        
+        // [FIX] Safe TypeScript lookup for the default location
+        const allowedIds = defaultCenter ? (EXAM_CENTER_PICKUPS as any)[defaultCenter] || [] : [];
+        const defaultLocation = allowedIds.length > 0 
+            ? LESSON_LOCATIONS.find(l => allowedIds.includes(l.id))?.label || '' 
+            : '';
+
         setConfig(prev => ({
             ...prev,
             lessonDuration: Number(defaultDuration) || 45,
             isDouble: !!defaultDouble,
             vehicleType: teacherVehicles && teacherVehicles.length > 0 ? teacherVehicles[0] : '1a',
-            examCenter: teacherExamCenters && teacherExamCenters.length > 0 ? teacherExamCenters[0] : '', // Default to first chosen center
-            location: '' 
+            examCenter: defaultCenter,
+            location: defaultLocation // <-- Pre-fills safely!
         }));
     }
   }, [isOpen, defaultDuration, defaultDouble, teacherVehicles, teacherExamCenters]);
@@ -159,7 +167,8 @@ export function AutoFillModal({ isOpen, onClose, onGenerate, isGenerating, teach
             <label className="text-[10px] text-textGrey uppercase font-black">Exam Center</label>
             <div 
                 onClick={() => setShowCenterDropdown(!showCenterDropdown)}
-                className={`w-full pl-4 pr-3 p-3 bg-midnight border rounded-lg text-white cursor-pointer flex items-center justify-between transition-colors ${showCenterDropdown ? 'border-orange' : 'border-gray-700 hover:border-gray-500'}`}
+                // [CHANGED] border-orange to border-purple-500
+                className={`w-full pl-4 pr-3 p-3 bg-midnight border rounded-lg text-white cursor-pointer flex items-center justify-between transition-colors ${showCenterDropdown ? 'border-purple-500' : 'border-gray-700 hover:border-gray-500'}`}
             >
                 <span className={`text-sm font-bold truncate mr-2 ${!config.examCenter ? 'text-gray-500' : ''}`}>
                     {getExamCenterLabel(config.examCenter) || "Select Exam Center..."}
@@ -175,11 +184,17 @@ export function AutoFillModal({ isOpen, onClose, onGenerate, isGenerating, teach
                                 <div 
                                     key={center.id}
                                     onClick={() => {
-                                        setConfig({...config, examCenter: center.id, location: ''}); 
+                                        const allowedIds = (EXAM_CENTER_PICKUPS as any)[center.id] || [];
+                                        const firstLocation = allowedIds.length > 0 
+                                            ? LESSON_LOCATIONS.find(l => allowedIds.includes(l.id))?.label || '' 
+                                            : '';
+                                            
+                                        setConfig({...config, examCenter: center.id, location: firstLocation}); 
                                         setShowCenterDropdown(false);
                                     }}
+                                    // [CHANGED] bg-orange/10 text-orange to bg-purple-500/10 text-purple-400
                                     className={`p-3 text-sm font-bold cursor-pointer transition-colors border-b border-gray-800 last:border-0 flex items-center justify-between ${
-                                        config.examCenter === center.id ? 'bg-orange/10 text-orange' : 'text-white hover:bg-midnight'
+                                        config.examCenter === center.id ? 'bg-purple-500/10 text-purple-400' : 'text-white hover:bg-midnight'
                                     }`}
                                 >
                                     <span>{center.label}</span>
@@ -200,7 +215,8 @@ export function AutoFillModal({ isOpen, onClose, onGenerate, isGenerating, teach
         <div className="space-y-2 relative z-30">
             <label className="text-[10px] text-textGrey uppercase font-black flex justify-between">
                 <span>Pickup Location</span>
-                {config.examCenter && <span className="text-orange">{availableLocations.length} options</span>}
+                {/* [CHANGED] text-orange to text-purple-400 */}
+                {config.examCenter && <span className="text-purple-400">{availableLocations.length} options</span>}
             </label>
             {config.examCenter ? (
                 <div className="flex flex-wrap gap-2">
@@ -208,8 +224,9 @@ export function AutoFillModal({ isOpen, onClose, onGenerate, isGenerating, teach
                     <button 
                     key={loc.id} type="button" 
                     onClick={() => setConfig({...config, location: loc.label})}
+                    // [CHANGED] bg-orange text-white border-orange to bg-purple-500 text-white border-purple-500
                     className={`px-3 py-1.5 rounded-md text-xs font-bold border transition-all ${
-                        config.location === loc.label ? 'bg-orange text-white border-orange' : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'
+                        config.location === loc.label ? 'bg-purple-500 text-white border-purple-500' : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'
                     }`}
                     >
                     {loc.label}
@@ -225,7 +242,7 @@ export function AutoFillModal({ isOpen, onClose, onGenerate, isGenerating, teach
         
         <button 
             onClick={() => onGenerate(config)} 
-            disabled={isGenerating || config.workingDays.length === 0}
+            disabled={isGenerating || config.workingDays.length === 0 || !config.examCenter || !config.location}
             className="w-full mt-2 bg-purple-500 hover:bg-purple-600 text-white p-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
         >
             {isGenerating ? <Loader2 size={18} className="animate-spin" /> : <Calendar size={18} />}

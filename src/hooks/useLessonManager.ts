@@ -17,7 +17,7 @@ interface LessonForm {
   examCenter?: string; 
 }
 
-export function useLessonManager(user: any, slots: any[], profile: any) {
+export function useLessonManager(user: any, slots: any[], profile: any, holidays: Record<string, string> = {}) {
   const [saveLoading, setSaveLoading] = useState(false);
   const [validationMsg, setValidationMsg] = useState('');
 
@@ -75,7 +75,7 @@ export function useLessonManager(user: any, slots: any[], profile: any) {
          return;
       }
 
-      const check = checkSlotValidity(form.date, form.time, finalDuration, slots, editingSlot?.id || null);
+      const check = checkSlotValidity(form.date, form.time, finalDuration, slots, editingSlot?.id || null, holidays);
       if (!check.valid) {
         setValidationMsg(check.error || "Time slot overlap!");
         setSaveLoading(false);
@@ -199,12 +199,22 @@ export function useLessonManager(user: any, slots: any[], profile: any) {
                 continue;
             }
 
-            // RULE B: RESTRICTED ZONES 
-            if (dayOfWeek !== 0) { 
+            // --- UPDATED RULE B: RESTRICTED ZONES ---
+            const isHoliday = !!holidays[dateStr]; // Check our new dictionary
+
+            // Only apply restrictions if it's NOT a Sunday (0) AND NOT a Holiday
+            if (dayOfWeek !== 0 && !isHoliday) { 
+                // Morning Restriction (07:30 - 09:30)
                 const hitsMorning = slotStartMins < 570 && slotEndMins > 450;
+                if (hitsMorning) {
+                    currentMins = 570; // Snap to 09:30 AM
+                    continue;
+                }
+                
+                // Evening Restriction (16:30 - 19:30)
                 const hitsEvening = dayOfWeek !== 6 && (slotStartMins < 1170 && slotEndMins > 990); 
-                if (hitsMorning || hitsEvening) {
-                    currentMins += 15; 
+                if (hitsEvening) {
+                    currentMins = 1170; // Snap to 19:30 PM
                     continue;
                 }
             }
@@ -221,12 +231,48 @@ export function useLessonManager(user: any, slots: any[], profile: any) {
 
             const timeStr = `${String(slotHour).padStart(2, '0')}:${String(slotMinute).padStart(2, '0')}`;
 
-            // RULE D: PREVENT DUPLICATES & OVERLAPS 
-            const overlapCheck = checkSlotValidity(dateStr, timeStr, effectiveDuration, slots, undefined);
+            // --- UPDATED RULE D: SMART SNAPPING FOR OVERLAPS ---
+            const daySlots = slots.filter(s => s.date === dateStr);
+            let collisionEndMins = 0;
+
+            // 1. Scan the day to see exactly what we are colliding with
+            for (const s of daySlots) {
+                const [sh, sm] = s.time.split(':').map(Number);
+                const sStart = sh * 60 + sm;
+                
+                // Safely calculate the duration of the obstacle
+                let sDuration = s.duration;
+                if (!sDuration) {
+                    sDuration = s.customDuration || (s.isDouble ? effectiveDuration * 2 : effectiveDuration);
+                }
+                const sEnd = sStart + sDuration;
+
+                // Strict Overlap Check
+                if (slotStartMins < sEnd && slotEndMins > sStart) {
+                    // Find the absolute latest end time if multiple slots overlap
+                    if (sEnd > collisionEndMins) {
+                        collisionEndMins = sEnd; 
+                    }
+                }
+            }
+
+            // 2. If we hit a block, SNAP perfectly to the end of it!
+            if (collisionEndMins > 0) {
+                currentMins = collisionEndMins; 
+                continue;
+            }
+
+            // 3. Fallback gatekeeper check for generic restrictions
+            const overlapCheck = checkSlotValidity(dateStr, timeStr, effectiveDuration, slots, undefined, holidays);
             if (!overlapCheck.valid) {
                 currentMins += 15; 
                 continue;
             }
+
+            // --- [NEW] CALCULATE THE END TIME STRING ---
+            const endHour = Math.floor(slotEndMins / 60);
+            const endMinute = slotEndMins % 60;
+            const endTimeStr = `${String(endHour).padStart(2, '0')}:${String(endMinute).padStart(2, '0')}`;
 
             const newSlotRef = doc(collection(db, "slots"));
             
@@ -234,6 +280,7 @@ export function useLessonManager(user: any, slots: any[], profile: any) {
                 teacherId: user.uid,
                 date: dateStr,
                 time: timeStr,
+                endTime: endTimeStr,
                 duration: effectiveDuration, // <-- Save the total math duration
                 type: config.vehicleType,
                 status: 'Draft',
@@ -256,10 +303,81 @@ export function useLessonManager(user: any, slots: any[], profile: any) {
     }
   };
 
+  // --- SMART COPY WEEK ---
+  const copyWeekToNext = async (
+    slotsToCopy: any[], 
+    onSuccess: (msg: string) => void, 
+    onError: (msg: string) => void
+  ) => {
+    if (!user || slotsToCopy.length === 0) return;
+    setSaveLoading(true);
+
+    try {
+      const batch = writeBatch(db);
+      let copiedCount = 0;
+      let skippedCount = 0;
+
+      slotsToCopy.forEach(slot => {
+         // 1. Safely calculate the date + 7 days
+         const [y, m, d] = slot.date.split('-').map(Number);
+         const dateObj = new Date(y, m - 1, d);
+         dateObj.setDate(dateObj.getDate() + 7);
+         
+         const newDateStr = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+
+         // 2. Safe fallback for older slots that might be missing the duration field
+         const effectiveDuration = slot.duration || (slot.isDouble ? Number(profile?.lessonDuration) * 2 : Number(profile?.lessonDuration)) || 45;
+
+         // 3. Ask the Gatekeeper if this time is legal on the NEW date!
+         const check = checkSlotValidity(
+             newDateStr, 
+             slot.time, 
+             effectiveDuration, 
+             slots, 
+             undefined, 
+             holidays
+         );
+
+         // 4. Only copy it if it's strictly legal
+         if (check.valid) {
+             const newSlotRef = doc(collection(db, "slots"));
+             
+             // [FIREBASE FIX] Create a clean copy and explicitly delete the ID
+             const cleanSlot = { ...slot };
+             delete cleanSlot.id; 
+
+             batch.set(newSlotRef, {
+                 ...cleanSlot,
+                 date: newDateStr,         
+                 status: 'Draft',          // Always copy as a draft
+                 duration: effectiveDuration, 
+                 createdAt: new Date().toISOString()
+             });
+             copiedCount++;
+         } else {
+             skippedCount++; 
+         }
+      });
+
+      if (copiedCount > 0) {
+          await batch.commit();
+          onSuccess(`Copied ${copiedCount} lessons! ${skippedCount > 0 ? `(Skipped ${skippedCount} due to restrictions/holidays)` : ''}`);
+      } else {
+          onError("Could not copy. All slots hit restricted zones or collisions on the new week.");
+      }
+    } catch (error) {
+      console.error("Copy Error:", error); // Added a log so we can always see the exact Firebase complaint!
+      onError("Error copying week");
+    } finally {
+      setSaveLoading(false);
+    }
+  };
+
   return { 
     saveLesson, 
     deleteLesson,
     autoScheduleWeek,
+    copyWeekToNext,
     saveLoading, 
     validationMsg, 
     setValidationMsg 

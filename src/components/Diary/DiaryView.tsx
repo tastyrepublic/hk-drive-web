@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Sparkles, AlertCircle, Send, Loader2 } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, Plus, Sparkles, AlertCircle, Send, Loader2 } from 'lucide-react';
 import { motion, useMotionValue, useTransform, animate, AnimatePresence } from 'framer-motion';
 import { DiaryCard } from './DiaryCard';
+import { useHolidays } from '../../hooks/useHolidays';
 
 // --- IMPORT CONSTANTS ---
 import { RESTRICTED_HOURS } from '../../constants/list';
@@ -15,6 +16,7 @@ interface Props {
   lessonDuration: number; 
   onPublishDrafts: () => Promise<void>;
   onOpenAutoFill: (weekStartDate: Date) => void; // <-- Change this prop
+  onCopyWeek: (slotsToCopy: any[], onSuccess: (msg: string) => void, onError: (msg: string) => void) => Promise<void>;
 }
 
 const HOURS = Array.from({ length: 18 }, (_, i) => i + 6);
@@ -55,7 +57,7 @@ const timeToPixels = (timeStr: string) => {
     return (totalMinutesFromStart / 60) * CELL_HEIGHT;
 };
 
-export function DiaryView({ slots, setEditingSlot, lessonDuration, onPublishDrafts, onOpenAutoFill }: Props) {
+export function DiaryView({ slots, setEditingSlot, lessonDuration, onPublishDrafts, onOpenAutoFill, onCopyWeek }: Props) {
   const [[weekOffset, direction], setWeekOffset] = useState([0, 0]);
   const [nowPosition, setNowPosition] = useState(0);
   
@@ -66,9 +68,25 @@ export function DiaryView({ slots, setEditingSlot, lessonDuration, onPublishDraf
   
   const isDragging = useRef(false);
 
+  const holidays = useHolidays();
+
   const [isPlanningMode, setIsPlanningMode] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const draftSlots = slots.filter(s => s.status === 'Draft');
+
+  // --- HELPERS ---
+  const isPastSlot = (targetDate: Date, targetHour: number) => {
+    const now = new Date();
+    
+    // Reset the time portion of targetDate to midnight for accurate day comparison
+    const targetDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    if (targetDay < today) return true; // Entire day is in the past
+    if (targetDay.getTime() === today.getTime() && targetHour < now.getHours()) return true; // Earlier today
+    
+    return false; // Future or current hour
+  };
 
   // --- PHYSICS ---
   const scaleY = useTransform(
@@ -85,16 +103,39 @@ export function DiaryView({ slots, setEditingSlot, lessonDuration, onPublishDraf
   });
 
   // --- NAVIGATION ---
-  const paginate = (newDirection: number) => {
-    setWeekOffset([weekOffset + newDirection, newDirection]);
-  };
+  // [UPDATED] Use functional state (prev) so it doesn't get stuck during rapid-fire holding
+  const paginate = useCallback((newDirection: number) => {
+    setWeekOffset(prev => [prev[0] + newDirection, newDirection]);
+  }, []);
 
   const jumpToToday = () => {
-    const newDirection = weekOffset === 0 ? 0 : (0 > weekOffset ? 1 : -1);
-    setWeekOffset([0, newDirection]);
+    setWeekOffset(prev => [0, prev[0] < 0 ? 1 : -1]);
     scrollToTime(true);
   };
 
+  // --- [NEW] HOLD-TO-FLY LOGIC ---
+  // [FIX] Use standard web typings instead of NodeJS
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const startHold = (direction: number) => {
+    paginate(direction); 
+    
+    holdTimerRef.current = setTimeout(() => {
+        holdTimerRef.current = setInterval(() => {
+            paginate(direction);
+        }, 150); 
+    }, 400); 
+  };
+
+  const stopHold = () => {
+    if (holdTimerRef.current) {
+        clearTimeout(holdTimerRef.current as any);
+        clearInterval(holdTimerRef.current as any);
+        holdTimerRef.current = null;
+    }
+  };
+
+  // We accidentally deleted this! It calculates the dates for the visible week.
   const days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
     const dayOfWeek = d.getDay();
@@ -223,6 +264,32 @@ export function DiaryView({ slots, setEditingSlot, lessonDuration, onPublishDraf
               <Sparkles size={16} />
               <span className="hidden sm:inline">Auto-Fill Week</span>
             </button>
+
+            {/* NEW COPY WEEK BUTTON */}
+            <button 
+              onClick={async () => {
+                setIsPublishing(true); // Re-use the loading state to prevent double clicks
+                
+                // 1. Gather ONLY the slots currently visible on this specific week
+                const weekDates = days.map(d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+                const slotsToCopy = slots.filter(s => weekDates.includes(s.date));
+                
+                // 2. Fire the smart copy!
+                await onCopyWeek(
+                    slotsToCopy,
+                    (msg) => alert(msg), // You can replace this with your toast if you pass showToast down!
+                    (msg) => alert(msg)
+                );
+                
+                setIsPublishing(false);
+                setIsPlanningMode(true); // Turn on draft mode so they can see what pasted
+              }}
+              disabled={isPublishing}
+              className="flex items-center gap-2 bg-blue-500/20 border border-blue-500/50 text-blue-400 hover:bg-blue-500 hover:text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-all"
+            >
+              <Calendar size={16} />
+              <span className="hidden sm:inline">Copy to Next Week</span>
+            </button>
             
             {/* 4. PLANNING MODE TOGGLE (This is your existing button) */}
             <button 
@@ -239,10 +306,36 @@ export function DiaryView({ slots, setEditingSlot, lessonDuration, onPublishDraf
           </div>
         </div>
         
-        <div className="flex items-center gap-1 text-textGrey">
-           <button onClick={() => paginate(-1)} className="p-2 hover-bg-theme rounded-lg"><ChevronLeft size={20}/></button>
-           <button onClick={jumpToToday} className={`px-3 py-1.5 text-xs font-bold rounded-lg ${weekOffset === 0 ? 'bg-orange/10 text-orange border border-orange/20' : 'hover-bg-theme text-textGrey border border-transparent'}`}>Today</button>
-           <button onClick={() => paginate(1)} className="p-2 hover-bg-theme rounded-lg"><ChevronRight size={20}/></button>
+        <div className="flex items-center gap-1 text-textGrey select-none">
+           <button 
+             onMouseDown={() => startHold(-1)}
+             onMouseUp={stopHold}
+             onMouseLeave={stopHold}
+             onTouchStart={() => startHold(-1)}
+             onTouchEnd={stopHold}
+             // Prevents text-selection highlighting while holding
+             className="p-2 hover-bg-theme rounded-lg transition-colors select-none"
+           >
+             <ChevronLeft size={20}/>
+           </button>
+           
+           <button 
+             onClick={jumpToToday} 
+             className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${weekOffset === 0 ? 'bg-orange/10 text-orange border border-orange/20' : 'hover-bg-theme text-textGrey border border-transparent'}`}
+           >
+             Today
+           </button>
+           
+           <button 
+             onMouseDown={() => startHold(1)}
+             onMouseUp={stopHold}
+             onMouseLeave={stopHold}
+             onTouchStart={() => startHold(1)}
+             onTouchEnd={stopHold}
+             className="p-2 hover-bg-theme rounded-lg transition-colors select-none"
+           >
+             <ChevronRight size={20}/>
+           </button>
         </div>
       </div>
 
@@ -250,7 +343,7 @@ export function DiaryView({ slots, setEditingSlot, lessonDuration, onPublishDraf
       <div className="flex border-b border-gray-800 bg-slate z-40 shadow-sm relative overflow-hidden transition-colors duration-300">
         <div className="w-10 flex-shrink-0 bg-slate border-r border-gray-800 z-10 transition-colors duration-300" />
         
-        <div className="flex-1 relative h-[52px]">
+        <div className="flex-1 relative h-[60px]">
             <AnimatePresence initial={false} custom={direction}>
                 <motion.div
                     key={weekOffset}
@@ -263,16 +356,43 @@ export function DiaryView({ slots, setEditingSlot, lessonDuration, onPublishDraf
                     className="flex w-full h-full absolute top-0 left-0"
                 >
                     {days.map((day, i) => {
-                    const isToday = day.toDateString() === new Date().toDateString();
-                    return (
-                        <div key={i} className="flex-1 py-3 text-center border-r border-gray-800 last:border-r-0 relative bg-slate transition-colors duration-300">
-                        <div className={`text-[9px] uppercase font-black tracking-tighter ${isToday ? 'text-orange' : 'text-textGrey'}`}>
-                            {day.toLocaleDateString('en-GB', { weekday: 'short' })}
-                        </div>
-                        <div className={`text-xs font-bold ${isToday ? 'text-orange' : 'text-white'}`}>{day.getDate()}</div>
-                        {isToday && <div className="absolute bottom-0 left-0 right-0 h-1 bg-orange" />}
-                        </div>
-                    );
+                        const isToday = day.toDateString() === new Date().toDateString();
+                        
+                        // Look up the holiday for this specific date
+                        const dateKey = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+                        const holidayName = holidays[dateKey];
+
+                        return (
+                            // Tint the header cell faintly red if it's a holiday
+                            <div 
+                                key={i} 
+                                className={`flex-1 min-w-0 py-2.5 text-center border-r border-gray-800 last:border-r-0 relative transition-colors duration-300 ${
+                                    holidayName ? 'bg-red-500/10' : 'bg-slate'
+                                }`}
+                            >
+                                <div className={`text-[9px] uppercase font-black tracking-tighter ${isToday ? 'text-orange' : 'text-textGrey'}`}>
+                                    {day.toLocaleDateString('en-GB', { weekday: 'short' })}
+                                </div>
+                                
+                                {/* Date & Clean Holiday Badge */}
+                                <div className="flex flex-col items-center gap-1 w-full px-1.5 mt-0.5">
+                                    <div className={`text-xs font-bold leading-none ${isToday ? 'text-orange' : 'text-white'}`}>
+                                        {day.getDate()}
+                                    </div>
+                                    
+                                    {holidayName && (
+                                        <div 
+                                            title={holidayName}
+                                            className="text-[8px] font-black uppercase tracking-tighter text-red-500/80 w-full truncate text-center mt-0.5"
+                                        >
+                                            {holidayName}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {isToday && <div className="absolute bottom-0 left-0 right-0 h-1 bg-orange" />}
+                            </div>
+                        );
                     })}
                 </motion.div>
             </AnimatePresence>
@@ -294,7 +414,15 @@ export function DiaryView({ slots, setEditingSlot, lessonDuration, onPublishDraf
                 touchAction: 'none'
             }} 
             onDragStart={() => { isDragging.current = true; }}
-            onDragEnd={() => { setTimeout(() => isDragging.current = false, 10); }}
+            // [FIX 1] Increase the timeout to 150ms so it covers the browser's click delay
+            onDragEnd={() => { setTimeout(() => isDragging.current = false, 150); }}
+            // [FIX 2] Add this shield! It instantly kills any click event if dragging is true.
+            onClickCapture={(e) => {
+                if (isDragging.current) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                }
+            }}
             drag="y"
             dragConstraints={{ top: scrollLimit, bottom: 0 }}
             dragElastic={0.5} 
@@ -343,20 +471,28 @@ export function DiaryView({ slots, setEditingSlot, lessonDuration, onPublishDraf
                         
                         const daySlots = slots.filter(s => s.date === dateString);
 
-                        // --- [NEW] CALCULATE RESTRICTED ZONES FOR THIS DAY ---
+                        // --- CALCULATE RESTRICTED ZONES FOR THIS DAY ---
                         const dayOfWeek = day.getDay(); // 0=Sun, 6=Sat
-                        const restrictedZones = RESTRICTED_HOURS
-                            .filter(r => r.days.includes(dayOfWeek))
-                            .map(r => {
-                                const top = timeToPixels(r.start);
-                                const height = timeToPixels(r.end) - top;
-                                return { top, height, label: r.label };
-                            });
+                        const isPublicHoliday = !!holidays[dateString]; 
+                        
+                        // If it's Sunday OR a Public Holiday, wipe out all restrictions!
+                        const restrictedZones = (dayOfWeek === 0 || isPublicHoliday) 
+                            ? [] 
+                            : RESTRICTED_HOURS
+                                .filter(r => r.days.includes(dayOfWeek))
+                                .map(r => {
+                                    const top = timeToPixels(r.start);
+                                    const height = timeToPixels(r.end) - top;
+                                    return { top, height, label: r.label };
+                                });
 
                         return (
-                            <div key={dayIdx} className="flex-1 border-r border-gray-800 last:border-r-0 relative h-full bg-slate transition-colors duration-300">
+                            <div 
+                                key={dayIdx} 
+                                className="flex-1 min-w-0 border-r border-gray-800 last:border-r-0 relative h-full bg-slate transition-colors duration-300"
+                            >
                             
-                            {/* [NEW] RESTRICTED ZONES VISUALIZATION */}
+                            {/* RESTRICTED ZONES VISUALIZATION */}
                             {restrictedZones.map((zone, idx) => (
                                 <div 
                                     key={`rest-${idx}`}
@@ -384,14 +520,22 @@ export function DiaryView({ slots, setEditingSlot, lessonDuration, onPublishDraf
                             ))}
 
                             {HOURS.map((h, idx) => {
+                              // [NEW] Check if this specific hour block is in the past!
+                              const isPast = isPastSlot(day, h);
+
                               return (
                                 <div 
                                   key={h} 
-                                  style={{ height: CELL_HEIGHT, cursor: 'pointer' }}
-                                  className={`w-full relative group hover:bg-white/5 transition-colors duration-200 ease-in-out ${idx === HOURS.length - 1 ? '' : 'border-b border-gray-800/30'}`}
+                                  style={{ height: CELL_HEIGHT, cursor: isPast ? 'not-allowed' : 'pointer' }}
+                                  className={`w-full relative group transition-colors duration-200 ease-in-out 
+                                    ${idx === HOURS.length - 1 ? '' : 'border-b border-gray-800/30'}
+                                    ${isPast ? 'bg-black/40 hover:bg-black/40' : 'hover:bg-white/5'}
+                                  `}
                                   onClick={(e) => {
                                       e.stopPropagation();
-                                      if (isDragging.current) return;
+                                      
+                                      // [NEW] Completely block interactions with past slots!
+                                      if (isDragging.current || isPast) return;
                                       
                                       // --- USE THE CENTRALIZED UTILITY ---
                                       const smartTime = getSmartStartTime(h, daySlots, lessonDuration);
@@ -401,13 +545,16 @@ export function DiaryView({ slots, setEditingSlot, lessonDuration, onPublishDraf
                                         time: smartTime, 
                                         location: '', 
                                         type: '', 
-                                        status: isPlanningMode ? 'Draft' : 'Booked' // <-- ADD THIS LINE
+                                        status: isPlanningMode ? 'Draft' : 'Booked' 
                                       }); 
                                   }}
                                 >
-                                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 ease-in-out pointer-events-none">
-                                        <Plus className="text-orange/50" size={16} />
-                                    </div>
+                                    {/* Only show the plus icon on hover if it's NOT in the past */}
+                                    {!isPast && (
+                                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 ease-in-out pointer-events-none">
+                                            <Plus className="text-orange/50" size={16} />
+                                        </div>
+                                    )}
                                 </div>
                               );
                             })}
