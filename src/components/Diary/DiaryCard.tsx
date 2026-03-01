@@ -1,30 +1,11 @@
-import { Edit2, User, CheckCircle2, Ban, Smartphone } from 'lucide-react'; // Added Smartphone icon
+import { Edit2, User, CheckCircle2, Ban, Smartphone } from 'lucide-react';
 
-const CELL_HEIGHT = 110; 
-
-export function DiaryCard({ slot, setEditingSlot, isAbsolute }: any) {
-  if (!isAbsolute) return null;
-
-  // 1. Calculate Position
-  const [hours, minutes] = slot.time.split(':').map(Number);
-  const startY = (hours - 6) * CELL_HEIGHT + (minutes / 60) * CELL_HEIGHT;
-  
-  let durationMins = slot.duration;
-  if (!durationMins) {
-      const [endH, endM] = slot.endTime.split(':').map(Number);
-      durationMins = (endH * 60 + endM) - (hours * 60 + minutes);
-  }
-  
-  const height = (durationMins / 60) * CELL_HEIGHT - 2;
-
-  // 2. Determine Status
+export function DiaryCard({ slot, setEditingSlot }: any) { // <-- Accept the prop
+  // 1. Determine Status
   const isBlocked = slot.status === 'Blocked';
-  const isDraft = slot.status === 'Draft'; // <-- ADD THIS
+  const isDraft = slot.status === 'Draft'; 
   const hasStudent = slot.studentId && slot.studentId !== 'Unknown' && slot.studentId !== '';
-  // Update effective booked to include drafts so it renders the student info:
   const isEffectiveBooked = (!isBlocked && hasStudent) || isDraft;
-  
-  // [NEW] Check if self-booked
   const isSelfBooked = slot.bookedBy === 'student';
 
   const vehicleLabel = slot.type && !isBlocked 
@@ -33,18 +14,16 @@ export function DiaryCard({ slot, setEditingSlot, isAbsolute }: any) {
 
   return (
     <div 
-      className={`absolute p-2 flex flex-col overflow-hidden cursor-pointer transition-all hover:z-20 shadow-sm hover:shadow-md
-        inset-x-[1px]
+      className={`h-full w-full p-2 flex flex-col overflow-hidden cursor-pointer transition-all hover:z-20 shadow-sm hover:shadow-md
         rounded-tl-md rounded-tr-md rounded-bl-md rounded-br-3xl
         ${isDraft
-            ? 'bg-purple-500/90 text-white border-2 border-dashed border-purple-300' // <-- DRAFT STYLING
+            ? 'bg-purple-500/90 text-white border-2 border-dashed border-purple-300' 
             : isEffectiveBooked 
               ? 'bg-orange text-white'      
               : isBlocked 
-                ? 'bg-statusRed text-white' 
+                ? 'bg-red-500 text-white' 
                 : 'bg-yellow-200 text-yellow-900' 
         }`}
-      style={{ top: `${startY}px`, height: `${height}px` }}
       onClick={(e) => {
         e.stopPropagation();
         setEditingSlot(slot);
@@ -57,7 +36,6 @@ export function DiaryCard({ slot, setEditingSlot, isAbsolute }: any) {
         </span>
         
         <div className="flex items-center gap-1">
-            {/* [NEW] Self-Booked Indicator */}
             {isSelfBooked && isEffectiveBooked && (
                 <div className="bg-white/20 p-0.5 rounded" title="Student Booked via App">
                     <Smartphone size={8} className="text-white" />
@@ -82,7 +60,7 @@ export function DiaryCard({ slot, setEditingSlot, isAbsolute }: any) {
             <div className="flex items-center gap-1 mb-0.5 opacity-80">
                <User size={10} />
                <span className="text-[9px] font-bold uppercase">
-                 {isDraft ? 'Draft Lesson' : 'Student'} {/* <-- SHOW DRAFT HERE */}
+                 {isDraft ? 'Draft Lesson' : 'Student'}
                </span>
             </div>
             <div className="text-[12px] font-black leading-tight truncate">
@@ -114,7 +92,7 @@ export function DiaryCard({ slot, setEditingSlot, isAbsolute }: any) {
         )}
       </div>
 
-      {isEffectiveBooked && height > 50 && (
+      {isEffectiveBooked && (
           <div className="absolute bottom-1.5 right-1.5 opacity-60">
              <CheckCircle2 size={22} strokeWidth={2.5} />
           </div>

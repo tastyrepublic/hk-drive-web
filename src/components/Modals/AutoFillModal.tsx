@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Modal } from './Modal';
-import { Loader2, Calendar, MapPin, ChevronDown, Check } from 'lucide-react';
+import { Loader2, Calendar, ChevronDown, Check } from 'lucide-react';
 import { 
-    VEHICLE_TYPES, EXAM_CENTERS, EXAM_REGIONS, 
+    VEHICLE_TYPES, EXAM_CENTERS, 
     LESSON_LOCATIONS, EXAM_CENTER_PICKUPS, getExamCenterLabel 
 } from '../../constants/list';
 

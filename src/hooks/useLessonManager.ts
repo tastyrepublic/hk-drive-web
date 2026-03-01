@@ -53,45 +53,53 @@ export function useLessonManager(user: any, slots: any[], profile: any, holidays
       // --- 3. VALIDATION ---
       if (!isBlockMode) {
           if (!form.location) {
-             setValidationMsg("Please select a location!");
+             onError("Please select a location!");
              setSaveLoading(false);
              return;
           }
           if (!form.type) {
-             setValidationMsg("Please select a vehicle category!");
+             onError("Please select a vehicle category!");
              setSaveLoading(false);
              return;
           }
           if (!form.examCenter) {
-             setValidationMsg("Please select an Exam Center!");
+             onError("Please select an Exam Center!");
              setSaveLoading(false);
              return;
           }
       }
 
       if (isBlockMode && !form.type) {
-         setValidationMsg("Please select or type a reason!");
+         onError("Please select or type a reason!");
          setSaveLoading(false);
          return;
       }
 
       const check = checkSlotValidity(form.date, form.time, finalDuration, slots, editingSlot?.id || null, holidays);
       if (!check.valid) {
-        setValidationMsg(check.error || "Time slot overlap!");
+        onError(check.error || "Time slot overlap!");
         setSaveLoading(false);
         return; 
       }
 
       // --- 4. DETERMINE STATUS & BOOKED BY ---
-      let finalStatus = form.status || 'Open'; // <-- Respect the incoming status!
+      let finalStatus = form.status || 'Open'; 
       let bookedBy = null; 
 
       if (isBlockMode) {
           finalStatus = 'Blocked';
           bookedBy = 'teacher';
+      } else if (form.status === 'Draft') {
+          // [FIX] Explicitly handle Drafts first so they don't get lost
+          finalStatus = 'Draft';
+          bookedBy = 'teacher';
+          
+          // Auto-convert to Booked if they open a Draft and assign a student
+          if (form.studentId && form.studentId !== 'Unknown' && form.studentId !== '') {
+              finalStatus = 'Booked'; 
+          }
       } else if (form.studentId && form.studentId !== 'Unknown' && form.studentId !== '') {
-          // If it came in as Draft, keep it Draft. Otherwise, it's Booked.
-          finalStatus = form.status === 'Draft' ? 'Draft' : 'Booked';
+          finalStatus = 'Booked';
           bookedBy = 'teacher'; 
       } else {
           finalStatus = 'Open'; 
@@ -315,7 +323,9 @@ export function useLessonManager(user: any, slots: any[], profile: any, holidays
     try {
       const batch = writeBatch(db);
       let copiedCount = 0;
-      let skippedCount = 0;
+      
+      // [NEW] Track exactly WHY slots were skipped
+      let skipReasons = { collisions: 0, restrictions: 0, other: 0 };
 
       slotsToCopy.forEach(slot => {
          // 1. Safely calculate the date + 7 days
@@ -346,27 +356,52 @@ export function useLessonManager(user: any, slots: any[], profile: any, holidays
              const cleanSlot = { ...slot };
              delete cleanSlot.id; 
 
+             // Preserve 'Blocked' status, turn all other lessons into 'Draft'
+             const newStatus = cleanSlot.status === 'Blocked' ? 'Blocked' : 'Draft';
+
              batch.set(newSlotRef, {
                  ...cleanSlot,
                  date: newDateStr,         
-                 status: 'Draft',          // Always copy as a draft
+                 status: newStatus,          
                  duration: effectiveDuration, 
                  createdAt: new Date().toISOString()
              });
              copiedCount++;
          } else {
-             skippedCount++; 
+             // [NEW] Categorize the error message
+             const errorMsg = check.error || '';
+             if (errorMsg.includes('Collision')) {
+                 skipReasons.collisions++;
+             } else if (errorMsg.includes('Restricted') || errorMsg.includes('Too Early') || errorMsg.includes('Too Late')) {
+                 skipReasons.restrictions++;
+             } else {
+                 skipReasons.other++;
+             }
          }
       });
 
       if (copiedCount > 0) {
           await batch.commit();
-          onSuccess(`Copied ${copiedCount} lessons! ${skippedCount > 0 ? `(Skipped ${skippedCount} due to restrictions/holidays)` : ''}`);
+          
+          // [NEW] Build a detailed toast message
+          let skippedMsg = '';
+          const totalSkipped = skipReasons.collisions + skipReasons.restrictions + skipReasons.other;
+          
+          if (totalSkipped > 0) {
+              let details = [];
+              if (skipReasons.collisions > 0) details.push(`${skipReasons.collisions} overlaps`);
+              if (skipReasons.restrictions > 0) details.push(`${skipReasons.restrictions} restricted/holidays`);
+              if (skipReasons.other > 0) details.push(`${skipReasons.other} other errors`);
+              
+              skippedMsg = `\n(Skipped ${totalSkipped}: ${details.join(', ')})`;
+          }
+          
+          onSuccess(`Copied ${copiedCount} lessons!${skippedMsg}`);
       } else {
-          onError("Could not copy. All slots hit restricted zones or collisions on the new week.");
+          onError("Could not copy. All slots hit restricted zones or overlaps on the new week.");
       }
     } catch (error) {
-      console.error("Copy Error:", error); // Added a log so we can always see the exact Firebase complaint!
+      console.error("Copy Error:", error); 
       onError("Error copying week");
     } finally {
       setSaveLoading(false);
