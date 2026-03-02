@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Modal } from './Modal';
 import { Loader2, Calendar, ChevronDown, Check } from 'lucide-react';
+import { TimeSelect } from '../Shared/TimeSelect';
+import { useTranslation } from 'react-i18next';
+
 import { 
-    VEHICLE_TYPES, EXAM_CENTERS, 
-    LESSON_LOCATIONS, EXAM_CENTER_PICKUPS, getExamCenterLabel 
+    LESSON_LOCATIONS, EXAM_CENTER_PICKUPS, getExamCenterLabel, getVehicleLabel
 } from '../../constants/list';
 
 interface Props {
@@ -15,9 +17,34 @@ interface Props {
   defaultDuration: number;
   defaultDouble: boolean;
   teacherExamCenters: string[];
+  weekStartDate: Date;
 }
 
-export function AutoFillModal({ isOpen, onClose, onGenerate, isGenerating, teacherVehicles, defaultDuration, defaultDouble, teacherExamCenters }: Props) {
+export function AutoFillModal({ isOpen, onClose, onGenerate, isGenerating, teacherVehicles, defaultDuration, defaultDouble, teacherExamCenters, weekStartDate }: Props) {
+  const { t } = useTranslation();
+
+  // [NEW] Calculate which days are in the past efficiently
+  const disabledDays = useMemo(() => {
+    if (!weekStartDate) return [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const pastDayIds: number[] = [];
+    
+    // Check all 7 days of the target week (assuming weekStartDate is a Monday)
+    for (let i = 0; i < 7; i++) {
+        const checkDate = new Date(weekStartDate);
+        checkDate.setDate(checkDate.getDate() + i);
+        
+        if (checkDate < today) {
+            // Map our loop index (0-6) to your day IDs (1-6 for Mon-Sat, 0 for Sun)
+            const dayId = i === 6 ? 0 : i + 1;
+            pastDayIds.push(dayId);
+        }
+    }
+    return pastDayIds;
+  }, [weekStartDate]);
+  
   const defaultVehicle = teacherVehicles.length > 0 ? teacherVehicles[0] : '1a';
   
   const [config, setConfig] = useState({
@@ -27,41 +54,36 @@ export function AutoFillModal({ isOpen, onClose, onGenerate, isGenerating, teach
     lessonDuration: defaultDuration, 
     isDouble: defaultDouble,         
     vehicleType: defaultVehicle,
-    skipLunch: true,
-    examCenter: '', // <-- ADDED
-    location: ''    // <-- ADDED
+    hasLunch: true,          // <-- NEW: Clearer boolean
+    lunchStart: '12:30',     // <-- NEW: Selectable start
+    lunchEnd: '13:30',       // <-- NEW: Selectable end
+    examCenter: '', 
+    location: ''    
   });
 
-  // --- FORCE SYNC WITH PROFILE SETTINGS ---
   useEffect(() => {
     if (isOpen) {
         const defaultCenter = teacherExamCenters && teacherExamCenters.length > 0 ? teacherExamCenters[0] : '';
-        
-        // [FIX] Safe TypeScript lookup for the default location
         const allowedIds = defaultCenter ? (EXAM_CENTER_PICKUPS as any)[defaultCenter] || [] : [];
-        const defaultLocation = allowedIds.length > 0 
-            ? LESSON_LOCATIONS.find(l => allowedIds.includes(l.id))?.label || '' 
-            : '';
+        const defaultLocation = allowedIds.length > 0 ? LESSON_LOCATIONS.find(l => allowedIds.includes(l.id))?.label || '' : '';
+
+        // [NEW] Strip out past days from the default Mon-Fri selection
+        const defaultWorkingDays = [1, 2, 3, 4, 5].filter(day => !disabledDays.includes(day));
 
         setConfig(prev => ({
             ...prev,
+            workingDays: defaultWorkingDays, // [FIXED] Smart default
             lessonDuration: Number(defaultDuration) || 45,
             isDouble: !!defaultDouble,
             vehicleType: teacherVehicles && teacherVehicles.length > 0 ? teacherVehicles[0] : '1a',
             examCenter: defaultCenter,
-            location: defaultLocation // <-- Pre-fills safely!
+            location: defaultLocation 
         }));
     }
   }, [isOpen, defaultDuration, defaultDouble, teacherVehicles, teacherExamCenters]);
 
   const [showCenterDropdown, setShowCenterDropdown] = useState(false);
-
-  // --- FILTERED CENTERS ---
-  // If they selected defaults, ONLY show those. Otherwise, show all.
-  const filteredExamCenters = teacherExamCenters.length > 0 
-    ? EXAM_CENTERS.filter(center => teacherExamCenters.includes(center.id))
-    : EXAM_CENTERS;
-
+  const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
   const allowedLocationIds = config.examCenter ? EXAM_CENTER_PICKUPS[config.examCenter] : null;
   const availableLocations = allowedLocationIds
     ? LESSON_LOCATIONS.filter(loc => allowedLocationIds.includes(loc.id))
@@ -75,9 +97,7 @@ export function AutoFillModal({ isOpen, onClose, onGenerate, isGenerating, teach
   const toggleDay = (dayId: number) => {
     setConfig(prev => ({
       ...prev,
-      workingDays: prev.workingDays.includes(dayId) 
-        ? prev.workingDays.filter(d => d !== dayId)
-        : [...prev.workingDays, dayId]
+      workingDays: prev.workingDays.includes(dayId) ? prev.workingDays.filter(d => d !== dayId) : [...prev.workingDays, dayId]
     }));
   };
 
@@ -89,45 +109,91 @@ export function AutoFillModal({ isOpen, onClose, onGenerate, isGenerating, teach
         {/* Working Days */}
         <div className="space-y-1.5">
           <label className="text-[10px] text-textGrey uppercase font-black">Working Days</label>
-          <div className="flex flex-wrap gap-1.5">
-            {days.map(d => (
-              <button
-                key={d.id} 
-                onClick={() => toggleDay(d.id)}
-                className={`px-3 py-1.5 rounded text-xs font-bold border transition-colors ${config.workingDays.includes(d.id) ? 'bg-purple-500 text-white border-purple-500' : 'bg-transparent text-textGrey border-gray-700 hover:border-gray-500'}`}
-              >
-                {d.label}
-              </button>
-            ))}
+          {/* [CHANGED] Swapped flex for grid-cols-7 so all 7 days share the exact same width */}
+          <div className="grid grid-cols-7 gap-1.5">
+            {days.map(d => {
+              const isPastDay = disabledDays.includes(d.id); // [NEW] Simple, clean check
+
+              return (
+                <button
+                  key={d.id} 
+                  disabled={isPastDay} // [NEW] Disable native click
+                  onClick={() => toggleDay(d.id)}
+                  className={`w-full py-1.5 rounded text-[11px] sm:text-xs font-bold border transition-colors text-center ${
+                    config.workingDays.includes(d.id) 
+                      ? 'bg-purple-500 text-white border-purple-500 shadow-sm' 
+                      : isPastDay
+                          ? 'bg-transparent text-gray-700 border-gray-800 opacity-30 cursor-not-allowed' // [NEW] Faded styling
+                          : 'bg-transparent text-textGrey border-gray-700 hover:border-gray-500'
+                  }`}
+                >
+                  {t(d.label)}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Times */}
+        {/* --- DYNAMIC TIME WHEELS --- */}
         <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <label className="text-[10px] text-textGrey uppercase font-black">Start Time</label>
-            <input type="time" value={config.startTime} onChange={e => setConfig({...config, startTime: e.target.value})} className="w-full p-2.5 bg-midnight border border-gray-700 rounded-lg text-white outline-none focus:border-purple-500" />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-[10px] text-textGrey uppercase font-black">End Time</label>
-            <input type="time" value={config.endTime} onChange={e => setConfig({...config, endTime: e.target.value})} className="w-full p-2.5 bg-midnight border border-gray-700 rounded-lg text-white outline-none focus:border-purple-500" />
-          </div>
-        </div>
+    <TimeSelect 
+        label="Start Time" 
+        value={config.startTime} 
+        onChange={(v) => setConfig({...config, startTime: v})} 
+    />
+    <TimeSelect 
+        label="End Time" 
+        value={config.endTime} 
+        minTime={config.startTime} 
+        align="right" 
+        onChange={(v) => setConfig({...config, endTime: v})} 
+    />
+</div>
 
-        {/* Vehicle Category (Full Width) */}
-        <div className="space-y-1.5">
-          <label className="text-[10px] text-textGrey uppercase font-black">Vehicle Category</label>
-          <select 
-              value={String(config.vehicleType)} 
-              onChange={e => setConfig({...config, vehicleType: e.target.value})} 
-              className="w-full p-2.5 bg-midnight border border-gray-700 rounded-lg text-white outline-none focus:border-purple-500 appearance-none"
+        {/* Vehicle Category (Custom Menu) */}
+        <div className="space-y-1.5 relative z-[45]">
+          <label className="text-[10px] text-textGrey uppercase font-black px-1">{t('Vehicle Category')}</label>
+          
+          {/* Custom Dropdown Trigger */}
+          <div 
+            onClick={() => setShowVehicleDropdown(!showVehicleDropdown)}
+            className={`w-full pl-4 pr-3 p-3 bg-midnight border rounded-lg text-white cursor-pointer flex items-center justify-between transition-colors ${showVehicleDropdown ? 'border-purple-500' : 'border-gray-700 hover:border-gray-500'}`}
           >
-              {VEHICLE_TYPES.filter(v => teacherVehicles.includes(v.id)).map(v => (
-                  <option key={v.id} value={v.id}>
-                      {v.label.replace('Private Car', 'Car').replace('Light Goods', 'Van')}
-                  </option>
-              ))}
-          </select>
+            <span className="text-sm font-bold truncate mr-2">
+              {/* [FIXED] Uses getVehicleLabel to find the key for the current selection */}
+              {t(getVehicleLabel(config.vehicleType)).replace('Private Car', 'Car').replace('Light Goods', 'Van')}
+            </span>
+            <ChevronDown size={16} className={`text-textGrey shrink-0 transition-transform ${showVehicleDropdown ? 'rotate-180' : ''}`} />
+          </div>
+
+          {/* Custom Dropdown List (Opens Upward) */}
+          {showVehicleDropdown && (
+            <div className="absolute bottom-full left-0 right-0 mb-1 bg-slate border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden flex flex-col animate-in fade-in slide-in-from-bottom-2 duration-200 select-none">
+              <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                {/* [FIXED] Map directly over teacherVehicles instead of filtering the master list */}
+                {teacherVehicles.map((vId) => {
+                  const labelKey = getVehicleLabel(vId); // Gets the translation key from list.ts
+                  
+                  return (
+                    <div 
+                      key={vId}
+                      onClick={() => {
+                        setConfig({...config, vehicleType: vId});
+                        setShowVehicleDropdown(false);
+                      }}
+                      className={`p-3 text-sm font-bold cursor-pointer transition-colors border-b border-gray-800 last:border-0 flex items-center justify-between ${
+                        config.vehicleType === vId ? 'bg-purple-500/10 text-purple-400' : 'text-white hover:bg-midnight'
+                      }`}
+                    >
+                      {/* [FIXED] Uses i18n and formatting consistent with EditLessonModal */}
+                      <span>{t(labelKey).replace('Private Car', 'Car').replace('Light Goods', 'Van')}</span>
+                      {config.vehicleType === vId && <Check size={16} />}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Dynamic Session Toggle */}
@@ -136,115 +202,109 @@ export function AutoFillModal({ isOpen, onClose, onGenerate, isGenerating, teach
             onClick={() => setConfig({...config, isDouble: !config.isDouble})}
         >
             <div className="flex flex-col">
-                <span className="text-sm font-bold text-white">
-                    {config.isDouble ? 'Double Session' : 'Single Session'}
-                </span>
-                <span className="text-xs text-textGrey">
-                    Generates <span className="text-white font-medium">{config.isDouble ? defaultDuration * 2 : defaultDuration} min</span> drafts
-                </span>
+                <span className="text-sm font-bold text-white">{config.isDouble ? 'Double Session' : 'Single Session'}</span>
+                <span className="text-xs text-textGrey">Generates <span className="text-white font-medium">{config.isDouble ? defaultDuration * 2 : defaultDuration} min</span> drafts</span>
             </div>
             <button type="button" className={`relative w-10 h-6 rounded-full transition-colors duration-200 ${config.isDouble ? 'bg-purple-500' : 'bg-gray-700'}`}>
                 <span className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full shadow-sm transition-transform duration-200 ${config.isDouble ? 'translate-x-4' : 'translate-x-0'}`} />
             </button>
         </div>
         
-        {/* Lunch Toggle */}
-        <div className="flex items-center gap-2 pt-1">
-            <input 
-                type="checkbox" 
-                id="skipLunch" 
-                checked={config.skipLunch} 
-                onChange={e => setConfig({...config, skipLunch: e.target.checked})}
-                className="w-4 h-4 accent-purple-500"
-            />
-            <label htmlFor="skipLunch" className="text-sm font-bold text-white cursor-pointer">Skip Lunch (12:30 - 13:30)</label>
+        {/* --- UPGRADED PURPLE LUNCH TOGGLE AND SMART PICKERS --- */}
+        <div className="space-y-2 p-3 bg-midnight border border-gray-800 rounded-xl">
+            <div className="flex items-center justify-between cursor-pointer" onClick={() => setConfig({...config, hasLunch: !config.hasLunch})}>
+                <div className="flex flex-col">
+                    <span className="text-sm font-bold text-white">Schedule Lunch Break</span>
+                    <span className="text-xs text-textGrey">Blocks out time for you to eat</span>
+                </div>
+                <button type="button" className={`relative w-10 h-6 rounded-full transition-colors duration-200 ${config.hasLunch ? 'bg-purple-500' : 'bg-gray-700'}`}>
+                    <span className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full shadow-sm transition-transform duration-200 ${config.hasLunch ? 'translate-x-4' : 'translate-x-0'}`} />
+                </button>
+            </div>
+            
+            {/* --- LUNCH PICKERS --- */}
+{config.hasLunch && (
+    <div className="grid grid-cols-2 gap-4 mt-2 pt-2 border-t border-gray-800">
+        <TimeSelect 
+            label="Lunch Start" 
+            value={config.lunchStart} 
+            minTime={config.startTime} 
+            onChange={(v) => setConfig({...config, lunchStart: v})} 
+        />
+        <TimeSelect 
+            label="Lunch End" 
+            value={config.lunchEnd} 
+            minTime={config.lunchStart} 
+            align="right" 
+            onChange={(v) => setConfig({...config, lunchEnd: v})} 
+        />
+    </div>
+)}
         </div>
 
         <div className="h-[1px] bg-gray-800 my-2" />
 
-        {/* --- EXAM CENTER SELECTOR (Locked to Profile) --- */}
+        {/* Exam Center Selector */}
         <div className="space-y-2 relative z-40">
-            <label className="text-[10px] text-textGrey uppercase font-black">Exam Center</label>
-            <div 
-                onClick={() => setShowCenterDropdown(!showCenterDropdown)}
-                // [CHANGED] border-orange to border-purple-500
-                className={`w-full pl-4 pr-3 p-3 bg-midnight border rounded-lg text-white cursor-pointer flex items-center justify-between transition-colors ${showCenterDropdown ? 'border-purple-500' : 'border-gray-700 hover:border-gray-500'}`}
-            >
+            <label className="text-[10px] text-textGrey uppercase font-black">{t('Exam Center')}</label>
+            <div onClick={() => setShowCenterDropdown(!showCenterDropdown)} className={`w-full pl-4 pr-3 p-3 bg-midnight border rounded-lg text-white cursor-pointer flex items-center justify-between transition-colors ${showCenterDropdown ? 'border-purple-500' : 'border-gray-700 hover:border-gray-500'}`}>
+                {/* [FIXED] Wrap the label in t() */}
                 <span className={`text-sm font-bold truncate mr-2 ${!config.examCenter ? 'text-gray-500' : ''}`}>
-                    {getExamCenterLabel(config.examCenter) || "Select Exam Center..."}
+                    {config.examCenter ? t(getExamCenterLabel(config.examCenter)) : t("Select Exam Center...")}
                 </span>
                 <ChevronDown size={16} className={`text-textGrey shrink-0 transition-transform ${showCenterDropdown ? 'rotate-180' : ''}`} />
             </div>
-
             {showCenterDropdown && (
-                <div className="absolute bottom-full left-0 right-0 mb-1 bg-slate border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden flex flex-col">
+                <div className="absolute bottom-full left-0 right-0 mb-1 bg-slate border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden flex flex-col animate-in fade-in slide-in-from-bottom-2 duration-200 select-none">
                     <div className="max-h-40 overflow-y-auto custom-scrollbar">
-                        {filteredExamCenters.length > 0 ? (
-                            filteredExamCenters.map((center) => (
-                                <div 
-                                    key={center.id}
-                                    onClick={() => {
-                                        const allowedIds = (EXAM_CENTER_PICKUPS as any)[center.id] || [];
-                                        const firstLocation = allowedIds.length > 0 
-                                            ? LESSON_LOCATIONS.find(l => allowedIds.includes(l.id))?.label || '' 
-                                            : '';
-                                            
-                                        setConfig({...config, examCenter: center.id, location: firstLocation}); 
+                        {teacherExamCenters.length > 0 ? (
+                            teacherExamCenters.map((centerId) => (
+                                <div key={centerId} onClick={() => {
+                                        const allowedIds = (EXAM_CENTER_PICKUPS as any)[centerId] || [];
+                                        const firstLocation = allowedIds.length > 0 ? LESSON_LOCATIONS.find(l => allowedIds.includes(l.id))?.label || '' : '';
+                                        setConfig({...config, examCenter: centerId, location: firstLocation}); 
                                         setShowCenterDropdown(false);
                                     }}
-                                    // [CHANGED] bg-orange/10 text-orange to bg-purple-500/10 text-purple-400
-                                    className={`p-3 text-sm font-bold cursor-pointer transition-colors border-b border-gray-800 last:border-0 flex items-center justify-between ${
-                                        config.examCenter === center.id ? 'bg-purple-500/10 text-purple-400' : 'text-white hover:bg-midnight'
-                                    }`}
+                                    className={`p-3 text-sm font-bold cursor-pointer transition-colors border-b border-gray-800 last:border-0 flex items-center justify-between ${config.examCenter === centerId ? 'bg-purple-500/10 text-purple-400' : 'text-white hover:bg-midnight'}`}
                                 >
-                                    <span>{center.label}</span>
-                                    {config.examCenter === center.id && <Check size={16} />}
+                                    {/* [FIXED] Wrap the center label in t() */}
+                                    <span>{t(getExamCenterLabel(centerId))}</span>
+                                    {config.examCenter === centerId && <Check size={16} />}
                                 </div>
                             ))
                         ) : (
-                            <div className="p-4 text-center text-xs text-gray-500 italic">
-                                Please select Exam Centers in Settings.
-                            </div>
+                            <div className="p-4 text-center text-xs text-gray-500 italic">{t('Please select Exam Centers in Settings.')}</div>
                         )}
                     </div>
                 </div>
             )}
         </div>
 
-        {/* --- PICKUP LOCATION SELECTOR --- */}
+        {/* Pickup Location Selector */}
         <div className="space-y-2 relative z-30">
             <label className="text-[10px] text-textGrey uppercase font-black flex justify-between">
-                <span>Pickup Location</span>
-                {/* [CHANGED] text-orange to text-purple-400 */}
-                {config.examCenter && <span className="text-purple-400">{availableLocations.length} options</span>}
+                <span>{t('Pickup Location')}</span>
+                {config.examCenter && <span className="text-purple-400">{availableLocations.length} {t('options')}</span>}
             </label>
             {config.examCenter ? (
                 <div className="flex flex-wrap gap-2">
                 {availableLocations.map(loc => (
-                    <button 
-                    key={loc.id} type="button" 
-                    onClick={() => setConfig({...config, location: loc.label})}
-                    // [CHANGED] bg-orange text-white border-orange to bg-purple-500 text-white border-purple-500
-                    className={`px-3 py-1.5 rounded-md text-xs font-bold border transition-all ${
-                        config.location === loc.label ? 'bg-purple-500 text-white border-purple-500' : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'
-                    }`}
+                    <button key={loc.id} type="button" onClick={() => setConfig({...config, location: loc.label})}
+                    className={`px-3 py-1.5 rounded-md text-xs font-bold border transition-all ${config.location === loc.label ? 'bg-purple-500 text-white border-purple-500' : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'}`}
                     >
-                    {loc.label}
+                    {/* [FIXED] Wrap the location label key in t() */}
+                    {t(loc.label)}
                     </button>
                 ))}
                 </div>
             ) : (
                 <div className="p-3 bg-midnight border border-gray-800 rounded-lg text-xs text-gray-500 italic text-center">
-                    Select an Exam Center to see valid pickup points.
+                    {t('Select an Exam Center to see valid pickup points.')}
                 </div>
             )}
         </div>
         
-        <button 
-            onClick={() => onGenerate(config)} 
-            disabled={isGenerating || config.workingDays.length === 0 || !config.examCenter || !config.location}
-            className="w-full mt-2 bg-purple-500 hover:bg-purple-600 text-white p-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-        >
+        <button onClick={() => onGenerate(config)} disabled={isGenerating || config.workingDays.length === 0 || !config.examCenter || !config.location} className="w-full mt-2 bg-purple-500 hover:bg-purple-600 text-white p-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
             {isGenerating ? <Loader2 size={18} className="animate-spin" /> : <Calendar size={18} />}
             Generate Drafts
         </button>

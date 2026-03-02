@@ -1,17 +1,20 @@
-import { AlertTriangle, Trash2, Loader2, Calendar, Clock, MapPin, Search, Car, Coffee, ChevronDown, Check } from 'lucide-react';
+import { AlertTriangle, Trash2, Loader2, MapPin, Search, Car, Coffee, ChevronDown, Check } from 'lucide-react';
 import { Modal } from './Modal';
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { TimeSelect } from '../Shared/TimeSelect';
+import { DateSelect } from '../Shared/DateSelect';
+import { useTranslation } from 'react-i18next';
+
 
 // --- Import Constants & Helpers ---
 import { 
   LESSON_LOCATIONS, 
   BLOCK_REASONS, 
-  VEHICLE_TYPES,
-  EXAM_CENTERS,
+  getVehicleLabel,
   EXAM_CENTER_PICKUPS,
   getExamCenterLabel,
-  EXAM_REGIONS 
+  getBlockReasonLabel
 } from '../../constants/list';
 
 // --- Import Animation Helpers ---
@@ -31,7 +34,8 @@ interface Props {
   lessonDuration: number;
   defaultDoubleLesson?: boolean; 
   students: any[]; 
-  vehicleTypes: string[]; 
+  vehicleTypes: string[];
+  teacherExamCenters: string[];
 }
 
 export function EditLessonModal({
@@ -43,11 +47,25 @@ export function EditLessonModal({
   lessonDuration = 45,
   defaultDoubleLesson = false, 
   students = [],
-  vehicleTypes = [] 
+  vehicleTypes = [],
+  teacherExamCenters = []
 }: Props) {
+
+  const { t } = useTranslation();
 
   const isOpen = !!editingSlot; 
   const isEditing = editingSlot && editingSlot.id;
+
+  // [NEW] Calculate today's date strictly as YYYY-MM-DD
+  const todayDate = new Date();
+  const todayStr = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, '0')}-${String(todayDate.getDate()).padStart(2, '0')}`;
+
+  // [NEW] Calculate dynamic minimum time to prevent booking past hours today
+  let dynamicMinTime: string | undefined = undefined;
+  // Only restrict past times if we are creating a NEW slot for TODAY
+  if (!isEditing && editForm.date === todayStr) {
+      dynamicMinTime = `${String(todayDate.getHours()).padStart(2, '0')}:${String(todayDate.getMinutes()).padStart(2, '0')}`;
+  }
 
   const errorRef = useRef<HTMLDivElement>(null);
   const centerDropdownRef = useRef<HTMLDivElement>(null);
@@ -63,10 +81,7 @@ export function EditLessonModal({
   const [showStudentDropdown, setShowStudentDropdown] = useState(false);
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const [showCenterDropdown, setShowCenterDropdown] = useState(false);
-  
-  // --- Center Filter State ---
-  const [centerRegionFilter, setCenterRegionFilter] = useState<string>('All');
-  
+    
   // --- 1. SMART DEFAULT LOGIC ---
   const primaryVehicle = vehicleTypes.length > 0 ? vehicleTypes[0] : '1a';
 
@@ -97,26 +112,13 @@ export function EditLessonModal({
   // --- A. INITIALIZATION ---
   useEffect(() => {
     if (isOpen) {
+        // [NEW] SMART DEFAULTS FROM PROFILE
+        let initialCenter = editingSlot?.examCenter || '';
+        let initialLocation = editingSlot?.location || '';
         
-        // --- [NEW] AUTO-DETECT REGION ---
-        // If the slot has a saved exam center, find its region and set the filter tab.
-        // If not, default to 'All'.
-        if (editingSlot?.examCenter) {
-            const match = EXAM_CENTERS.find(c => c.id === editingSlot.examCenter);
-            // @ts-ignore
-            if (match && match.region) {
-                // @ts-ignore
-                setCenterRegionFilter(match.region);
-            } else {
-                setCenterRegionFilter('All');
-            }
-        } else {
-            setCenterRegionFilter('All'); 
-        }
-
         // 1. Lesson Defaults
         const initialLessonState = (editingSlot?.status !== 'Blocked') 
-            ? { ...editingSlot, isDouble: editingSlot.isDouble ?? defaultDoubleLesson } 
+            ? { ...editingSlot, isDouble: editingSlot.isDouble ?? defaultDoubleLesson, examCenter: initialCenter, location: initialLocation } 
             : {
                 ...editingSlot, 
                 status: 'Open',
@@ -124,8 +126,11 @@ export function EditLessonModal({
                 studentId: '',
                 isDouble: defaultDoubleLesson, 
                 customDuration: undefined,
-                examCenter: editingSlot.examCenter || ''
+                examCenter: initialCenter,
+                location: initialLocation
             };
+
+        // ... (Keep the rest of the initialization the same, such as isRealVehicle and initialBlockState)
 
         const isRealVehicle = vehicleTypes.includes(initialLessonState?.type);
         if (!isRealVehicle) {
@@ -170,8 +175,9 @@ export function EditLessonModal({
 
   const isBlockMode = editForm.status === 'Blocked';
   
-  // Validation
-  const isFormValid = isBlockMode || (editForm.examCenter && editForm.examCenter !== '');
+  // Validation (Around line 143)
+  // [CHANGED] Now requires editForm.date as well
+  const isFormValid = !!editForm.time && !!editForm.date && (isBlockMode || (editForm.examCenter && editForm.examCenter !== ''));
 
   const blockDurations = [15, 30, 45, 60, 90, 120]; 
   const singleTime = lessonDuration;
@@ -205,11 +211,31 @@ export function EditLessonModal({
     if (validationMsg) setValidationMsg(''); 
   };
 
-  const handleFullDay = () => {
+  // --- [NEW] BULLETPROOF BLOCKED MODE HANDLER ---
+  const handleBlockUpdate = (newTime: string, targetDuration: number) => {
+      const [h, m] = newTime.split(':').map(Number);
+      
+      // 1. Calculate the absolute maximum minutes allowed until 23:30
+      const maxAllowed = (23 * 60 + 30) - (h * 60 + m); 
+      
+      // 2. Clamp the duration: take the requested duration, but never exceed maxAllowed
+      // (Also ensures duration never drops below 15 mins if they pick exactly 23:30)
+      const safeDuration = Math.max(15, Math.min(targetDuration, maxAllowed));
+
       setEditForm((prev: any) => ({
           ...prev,
-          time: '09:00',
-          customDuration: 540
+          time: newTime,
+          customDuration: safeDuration
+      }));
+      if (validationMsg) setValidationMsg('');
+  };
+
+  const handleFullDay = () => {
+      // Sets the start time to 06:00 and the duration to 1050 minutes (which ends exactly at 23:30)
+      setEditForm((prev: any) => ({
+          ...prev,
+          time: '06:00',
+          customDuration: 1050
       }));
   };
 
@@ -228,13 +254,6 @@ export function EditLessonModal({
   const filteredLocations = availableLocations.filter(loc => 
     loc.label.toLowerCase().includes((editForm.location || '').toLowerCase())
   );
-
-  // --- FILTER EXAM CENTERS (Logic) ---
-  const filteredExamCenters = EXAM_CENTERS.filter(center => {
-      if (centerRegionFilter === 'All') return true;
-      // @ts-ignore
-      return center.region === centerRegionFilter;
-  });
 
   return (
     <Modal
@@ -256,14 +275,14 @@ export function EditLessonModal({
           ) : <div />} 
           
           <button 
-            onClick={onSave} 
-            disabled={saveSlotLoading || !isSlotModified || !isFormValid} 
-            className={`h-[48px] min-w-[140px] flex items-center justify-center gap-2 px-6 rounded-xl font-bold text-white transition-all active:scale-[0.98] ${
-                isBlockMode 
-                 ? 'bg-statusRed hover:brightness-110' 
-                 : 'bg-orange hover:brightness-110'
-            } disabled:opacity-50 disabled:cursor-default disabled:active:scale-100 ml-auto`}
-          >
+  onClick={onSave} 
+  disabled={saveSlotLoading || !isSlotModified || !isFormValid} 
+  className={`h-[48px] min-w-[140px] flex items-center justify-center gap-2 px-6 rounded-xl font-bold text-white transition-all active:scale-[0.98] ${
+      isBlockMode 
+       ? 'bg-red-500 hover:bg-red-600' // [CHANGED] From statusRed to red-500 to match DiaryCard
+       : 'bg-orange hover:brightness-110'
+  } disabled:opacity-50 disabled:cursor-default disabled:active:scale-100 ml-auto`}
+>
             {saveSlotLoading ? (
               <Loader2 className="animate-spin" size={20} />
             ) : (
@@ -313,42 +332,40 @@ export function EditLessonModal({
            </button>
            
            <button 
-             onClick={() => {
-                if (blockSnapshot) {
-                    setEditForm({
-                        ...blockSnapshot,
-                        date: editForm.date,
-                        time: editForm.time,
-                        location: '', 
-                        examCenter: '' 
-                    });
-                }
-             }}
-             className={`flex-1 py-2 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-2 ${isBlockMode ? 'bg-statusRed text-white shadow-md' : 'text-textGrey hover:text-white'}`}
-           >
-             <Coffee size={14} /> Block Time
-           </button>
+  onClick={() => {
+     if (blockSnapshot) {
+         setEditForm({ ...blockSnapshot, date: editForm.date, time: editForm.time, location: '', examCenter: '' });
+     }
+  }}
+  className={`flex-1 py-2 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+    isBlockMode ? 'bg-red-500 text-white shadow-md' : 'text-textGrey hover:text-white' // [CHANGED] to red-500
+  }`}
+>
+  <Coffee size={14} /> Block Time
+</button>
         </div>
 
         {!isBlockMode && (
             <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
-               <label className="text-[10px] text-textGrey uppercase font-black px-1">Vehicle Category</label>
+               <label className="text-[10px] text-textGrey uppercase font-black px-1">{t('Vehicle Category')}</label>
                <div className="flex flex-wrap gap-2">
-                  {VEHICLE_TYPES.filter(vObj => vehicleTypes.includes(vObj.id)).map(v => {
-                      const label = v.label.replace('Private Car', 'Car').replace('Light Goods', 'Van');
-                      const isSelected = effectiveType === v.id;
+                  {/* [FIXED] Map directly over teacher's selected vehicleTypes instead of filtering the master list */}
+                  {vehicleTypes.map(vId => {
+                      const labelKey = getVehicleLabel(vId); // Gets 'vehicle.private_auto', etc.
+                      const isSelected = effectiveType === vId;
 
                       return (
                         <button
-                          key={v.id}
-                          onClick={() => handleChange('type', v.id)}
+                          key={vId}
+                          onClick={() => handleChange('type', vId)}
                           className={`px-3 py-1.5 rounded-md text-xs font-bold border transition-all ${
                              isSelected
                                ? 'bg-orange text-white border-orange'
                                : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'
                           }`}
                         >
-                          {label}
+                          {/* Translate the label and keep your formatting preference */}
+                          {t(labelKey).replace('Private Car', 'Car').replace('Light Goods', 'Van')}
                         </button>
                       );
                   })}
@@ -357,69 +374,90 @@ export function EditLessonModal({
          )}
 
         <div className="grid grid-cols-2 gap-4">
+             {/* [NEW] UPGRADED DATE SELECTOR */}
              <div className="space-y-1">
-              <label className="text-[10px] text-textGrey uppercase font-black px-1">Date</label>
-              <div className="relative">
-                <Calendar className="absolute left-3 top-3 text-textGrey" size={18} />
-                <input 
-                  type="date"
-                  value={editForm.date || ''}
-                  onChange={e => handleChange('date', e.target.value)}
-                  className="w-full pl-10 p-3 bg-midnight border border-gray-700 rounded-lg text-white focus:border-orange outline-none transition-colors appearance-none" 
-                />
-              </div>
+              <DateSelect 
+                label="Date" 
+                value={editForm.date || ''}
+                minDate={todayStr} // Locks out passed days!
+                variant={isBlockMode ? 'blocked' : 'orange'} // Adapts color perfectly
+                onChange={(newDate) => handleChange('date', newDate)} 
+              />
             </div>
 
             <div className="space-y-1">
-              <label className="text-[10px] text-textGrey uppercase font-black px-1">Time</label>
-              <div className="relative">
-                <Clock className="absolute left-3 top-3 text-textGrey" size={18} />
-                <input 
-                  type="time" 
-                  value={editForm.time || ''} 
-                  onChange={e => handleChange('time', e.target.value)} 
-                  className="w-full pl-10 p-3 bg-midnight border border-gray-700 rounded-lg text-white focus:border-orange outline-none transition-colors appearance-none" 
-                />
-              </div>
+              <TimeSelect 
+                label={t("Time")} 
+                value={editForm.time || ''} 
+                align="right" 
+                variant={isBlockMode ? 'blocked' : 'orange'} 
+                minTime={dynamicMinTime} 
+                onChange={(newTime) => {
+                    if (isBlockMode) {
+                        // [FIXED] Send the new time and current duration through the checkpoint
+                        handleBlockUpdate(newTime, editForm.customDuration || singleTime);
+                    } else {
+                        handleChange('time', newTime);
+                    }
+                }} 
+              />
             </div>
         </div>
         
         {isBlockMode ? (
             <div className="space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
                 <div className="space-y-2">
-                    <label className="text-[10px] text-textGrey uppercase font-black px-1 flex justify-between">
-                        <span>Duration</span>
-                        <span className="text-orange">Ends at {currentEndTime}</span>
+                    <label className="text-[10px] text-textGrey uppercase font-black px-1 flex items-center gap-2">
+                        <span>{t('Duration')}</span>
+                        <span className="text-red-500">{t('Ends at')} {currentEndTime}</span>
                     </label>
                     <div className="flex flex-wrap gap-2">
-                        {blockDurations.map(mins => (
-                             <button
-                                key={mins}
-                                onClick={() => handleChange('customDuration', mins)}
-                                className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${
-                                    (editForm.customDuration || singleTime) === mins
-                                    ? 'bg-statusRed text-white border-statusRed'
-                                    : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'
-                                }`}
-                             >
-                                {mins}m
-                             </button>
-                        ))}
-                        <button
-                            onClick={handleFullDay}
-                            className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${
-                                (editForm.customDuration) === 540
-                                ? 'bg-statusRed text-white border-statusRed'
-                                : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'
-                            }`}
-                        >
-                            Full Day
-                        </button>
+                        {/* [NEW] Calculate the remaining minutes until 23:30 from the currently selected time */}
+                        {(() => {
+                            const [h, m] = (editForm.time || '08:00').split(':').map(Number);
+                            const maxAllowed = (23 * 60 + 30) - (h * 60 + m);
+
+                            return (
+                                <>
+                                    {blockDurations.map(mins => {
+                                        const isTooLong = mins > maxAllowed; // Check if the button exceeds legal limit
+
+                                        return (
+                                            <button
+                                                key={mins}
+                                                disabled={isTooLong} // [NEW] Disable the button natively
+                                                onClick={() => handleBlockUpdate(editForm.time || '08:00', mins)}
+                                                className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${
+                                                    (editForm.customDuration || singleTime) === mins
+                                                    ? 'bg-red-500 text-white border-red-500' 
+                                                    : isTooLong
+                                                        ? 'bg-transparent text-gray-700 border-gray-800 opacity-30 cursor-not-allowed' // [NEW] Faded out styling for disabled buttons
+                                                        : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'
+                                                }`}
+                                            >
+                                                {mins}{t('common.min')}
+                                            </button>
+                                        );
+                                    })}
+                                    
+                                    <button
+                                        onClick={handleFullDay}
+                                        className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${
+                                            (editForm.customDuration) === 1050
+                                            ? 'bg-red-500 text-white border-red-500 shadow-sm'
+                                            : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'
+                                        }`}
+                                    >
+                                        {t('Full Day')}
+                                    </button>
+                                </>
+                            );
+                        })()}
                     </div>
                 </div>
 
                 <div className="space-y-2">
-                    <label className="text-[10px] text-textGrey uppercase font-black px-1">Reason</label>
+                    <label className="text-[10px] text-textGrey uppercase font-black px-1">{t('Reason')}</label>
                     <div className="flex flex-wrap gap-2 mb-2">
                         {BLOCK_REASONS.map(reason => (
                             <button
@@ -431,16 +469,22 @@ export function EditLessonModal({
                                     : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'
                                 }`}
                             >
-                                {reason.label}
+                                {/* [KEPT] Translated reason labels from list.ts */}
+                                {t(reason.label)}
                             </button>
                         ))}
                     </div>
                     <input 
                       type="text" 
-                      placeholder="Select a reason or type here..."
-                      value={editForm.type || ''}
+                      placeholder={t("Select a reason or type here...")}
+                      
+                      // [KEPT] Smart translation for the input value
+                      value={editForm.type ? t(getBlockReasonLabel(editForm.type)) : ''}
+                      
                       onChange={(e) => handleChange('type', e.target.value)}
-                      className="w-full p-3 bg-midnight border border-gray-700 rounded-lg text-white focus:border-statusRed outline-none transition-colors placeholder:text-gray-600"
+                      className={`w-full p-3 bg-midnight border border-gray-700 rounded-lg text-white outline-none transition-colors placeholder:text-gray-600 ${
+                        isBlockMode ? 'focus:border-red-500' : 'focus:border-orange'
+                      }`}
                     />
                 </div>
             </div>
@@ -472,7 +516,7 @@ export function EditLessonModal({
                 </div>
 
                 {/* --- 1. STUDENT FIELD (Z-Index 50) --- */}
-                <div className="space-y-1 relative z-50 animate-in fade-in slide-in-from-top-1 duration-200"> 
+                <div className={`space-y-1 relative animate-in fade-in slide-in-from-top-1 duration-200 ${showStudentDropdown ? 'z-[60]' : 'z-30'}`}> 
                   <label className="text-[10px] text-textGrey uppercase font-black px-1">Student</label>
                   <div className="relative">
                       <Search className="absolute left-3 top-3 text-textGrey" size={18} />
@@ -522,59 +566,36 @@ export function EditLessonModal({
                   </div>
                 </div>
                 
-                {/* --- 2. EXAM CENTER FIELD (Z-Index 40) --- */}
-                <div className="space-y-2 relative z-40 animate-in fade-in slide-in-from-top-1 duration-200" ref={centerDropdownRef}>
+                {/* --- 2. EXAM CENTER FIELD --- */}
+                <div className={`space-y-2 relative animate-in fade-in slide-in-from-top-1 duration-200 ${showCenterDropdown ? 'z-[60]' : 'z-20'}`} ref={centerDropdownRef}>
                    <label className="text-[10px] text-textGrey uppercase font-black px-1">Exam Center (Required)</label>
                    
-                   {/* FILTER TABS OUTSIDE (Match location button style) */}
-                   <div className="flex flex-wrap gap-1.5 mb-1">
-                      {EXAM_REGIONS.map(region => {
-                          const isSelected = centerRegionFilter === region;
-                          return (
-                              <button
-                                  key={region}
-                                  type="button"
-                                  onClick={() => {
-                                      setCenterRegionFilter(region);
-                                      setShowCenterDropdown(true); // Auto-open when filtering
-                                  }}
-                                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors border ${
-                                      isSelected 
-                                      ? 'bg-orange text-white border-orange shadow-sm' 
-                                      : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'
-                                  }`}
-                              >
-                                  {region === 'New Territories' ? 'N.T.' : region}
-                              </button>
-                          );
-                      })}
-                   </div>
-
                    {/* DROPDOWN TRIGGER */}
                    <div 
                         onClick={() => setShowCenterDropdown(!showCenterDropdown)}
                         className={`w-full pl-4 pr-3 p-3 bg-midnight border rounded-lg text-white cursor-pointer flex items-center justify-between transition-colors ${showCenterDropdown ? 'border-orange' : 'border-gray-700 hover:border-gray-500'}`}
                     >
                         <span className={`text-sm font-bold truncate mr-2 ${!editForm.examCenter ? 'text-gray-500' : ''}`}>
-                            {getExamCenterLabel(editForm.examCenter) || "Select Exam Center..."}
+                            {/* [FIXED] Get the label key first, THEN translate it! */}
+                            {editForm.examCenter ? t(getExamCenterLabel(editForm.examCenter)) : t('Select Exam Center...')}
                         </span>
                         <ChevronDown size={16} className={`text-textGrey shrink-0 transition-transform ${showCenterDropdown ? 'rotate-180' : ''}`} />
                    </div>
 
                    {/* DROPDOWN LIST */}
                    {showCenterDropdown && (
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-slate border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden flex flex-col">
+                        <div className="absolute bottom-full mb-1 left-0 right-0 bg-slate border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden flex flex-col animate-in fade-in slide-in-from-bottom-2 duration-200 select-none">
                             <div className="max-h-56 overflow-y-auto custom-scrollbar">
-                                {filteredExamCenters.length > 0 ? (
-                                    filteredExamCenters.map((center) => (
+                                {teacherExamCenters.length > 0 ? (
+                                    teacherExamCenters.map((centerId) => (
                                         <div 
-                                            key={center.id}
+                                            // ... onClick logic remains exactly the same
+                                            key={centerId}
                                             onClick={() => {
-                                                handleChange('examCenter', center.id);
+                                                handleChange('examCenter', centerId);
                                                 setShowCenterDropdown(false);
                                                 
-                                                // Auto-clear invalid location
-                                                const allowed = EXAM_CENTER_PICKUPS[center.id] || [];
+                                                const allowed = EXAM_CENTER_PICKUPS[centerId] || [];
                                                 const currentLabel = editForm.location;
                                                 const isValid = LESSON_LOCATIONS.some(l => 
                                                     allowed.includes(l.id) && l.label === currentLabel
@@ -584,18 +605,19 @@ export function EditLessonModal({
                                                 }
                                             }}
                                             className={`p-3 text-sm font-bold cursor-pointer transition-colors border-b border-gray-800 last:border-0 flex items-center justify-between ${
-                                                editForm.examCenter === center.id
+                                                editForm.examCenter === centerId
                                                 ? 'bg-orange/10 text-orange' 
                                                 : 'text-white hover:bg-midnight'
                                             }`}
                                         >
-                                            <span>{center.label}</span>
-                                            {editForm.examCenter === center.id && <Check size={16} />}
+                                            {/* [FIXED] Same here, get the key then translate */}
+                                            <span>{t(getExamCenterLabel(centerId))}</span>
+                                            {editForm.examCenter === centerId && <Check size={16} />}
                                         </div>
                                     ))
                                 ) : (
                                     <div className="p-4 text-center text-xs text-gray-500 italic">
-                                        No centers in {centerRegionFilter}
+                                        {t('No centers selected in profile.')}
                                     </div>
                                 )}
                             </div>
@@ -603,8 +625,8 @@ export function EditLessonModal({
                    )}
                 </div>
 
-                {/* --- 3. PICKUP LOCATION FIELD (Z-Index 30) --- */}
-                <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200 relative z-30">
+                {/* --- 3. PICKUP LOCATION FIELD --- */}
+                <div className={`space-y-2 relative animate-in fade-in slide-in-from-top-1 duration-200 ${showLocationDropdown ? 'z-[60]' : 'z-10'}`}>
                   <div className="space-y-1">
                     <label className="text-[10px] text-textGrey uppercase font-black px-1">
                         Pickup Location {editForm.examCenter ? `(${availableLocations.length} options)` : ''}
@@ -613,9 +635,12 @@ export function EditLessonModal({
                       <MapPin className="absolute left-3 top-3 text-textGrey z-10" size={18} />
                       <input 
                         type="text" 
-                        placeholder={!editForm.examCenter ? "Select Exam Center first..." : "Select valid pickup point..."}
+                        placeholder={!editForm.examCenter ? t("Select Exam Center first...") : t("Select valid pickup point...")}
                         disabled={!editForm.examCenter}
-                        value={editForm.location} 
+                        
+                        // [FIXED] Wrap the input value in t() so the selected key displays properly
+                        value={t(editForm.location)} 
+                        
                         onChange={e => {
                             handleChange('location', e.target.value);
                             setShowLocationDropdown(true);
@@ -637,7 +662,8 @@ export function EditLessonModal({
                                             setShowLocationDropdown(false);
                                         }}
                                     >
-                                        <span className="font-bold text-white text-sm">{loc.label}</span>
+                                        {/* [FIXED] Translate the list items */}
+                                        <span className="font-bold text-white text-sm">{t(loc.label)}</span>
                                     </div>
                                 ))}
                             </div>
@@ -659,7 +685,8 @@ export function EditLessonModal({
                                 : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'
                             }`}
                           >
-                            {loc.label}
+                            {/* [FIXED] Translate the quick-pick buttons */}
+                            {t(loc.label)}
                           </button>
                         ))}
                       </div>

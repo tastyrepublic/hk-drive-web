@@ -36,7 +36,7 @@ import { DEFAULT_VEHICLE_ID } from '../../constants/list';
 import { PAGE_VARIANTS, PAGE_TRANSITION } from '../../constants/animations';
 
 type Tab = 'diary' | 'students' | 'messages' | 'payments' | 'settings';
-type ToastType = 'success' | 'error';
+type ToastType = 'success' | 'error' | 'info';
 
 interface LessonForm {
   id?: string;
@@ -206,15 +206,28 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
   const isSlotModified = isFormValid && hasChanges;
   const isStudentModified = isEditingStudent ? JSON.stringify(studentForm) !== JSON.stringify(originalStudent) : (studentForm.name.trim() !== '' && studentForm.phone.trim() !== '');
 
-  const handlePublishDrafts = async () => {
-    const draftSlots = slots.filter(s => s.status === 'Draft');
-    if (draftSlots.length === 0) return;
+  // [NEW] Now accepts the specific drafts for the current week
+  const handlePublishDrafts = async (weeklyDrafts: any[]) => {
+    if (!weeklyDrafts || weeklyDrafts.length === 0) return;
+
+    // 1. Capture previous state
+    const previousSlots = [...slots];
+
+    // 2. OPTIMISTIC UI: Only update the specific drafts passed in
+    const draftIds = new Set(weeklyDrafts.map(d => d.id));
+    setSlots(prev => prev.map(slot => 
+        draftIds.has(slot.id) ? { ...slot, status: 'Booked' } : slot
+    ));
+
+    // 3. YIELD TO BROWSER
+    await new Promise(resolve => setTimeout(resolve, 10));
 
     try {
       const batch = writeBatch(db);
       const studentsNotified = new Set(); 
 
-      draftSlots.forEach(draft => {
+      // 4. Only process the weekly drafts
+      weeklyDrafts.forEach(draft => {
         const slotRef = doc(db, "slots", draft.id);
         batch.update(slotRef, { status: 'Booked' });
 
@@ -230,8 +243,9 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
       });
 
       await batch.commit(); 
-      showToast(`Successfully published ${draftSlots.length} lessons!`, 'success');
+      showToast(`Successfully published ${weeklyDrafts.length} lessons for this week!`, 'success');
     } catch (error) {
+      setSlots(previousSlots);
       showToast("Error publishing schedule", 'error');
     }
   };
@@ -472,7 +486,8 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
         validationMsg={validationMsg} setValidationMsg={setValidationMsg} saveSlotLoading={saveSlotLoading} 
         isSlotModified={isSlotModified} onSave={saveSlotEdit} onDelete={handleDeleteSlotClick} 
         lessonDuration={Number(profile?.lessonDuration) || 45} defaultDoubleLesson={!!profile?.defaultDoubleLesson} 
-        students={students} vehicleTypes={profile?.vehicleTypes && profile.vehicleTypes.length > 0 ? profile.vehicleTypes : []} 
+        students={students} vehicleTypes={profile?.vehicleTypes && profile.vehicleTypes.length > 0 ? profile.vehicleTypes : []}
+        teacherExamCenters={profile?.defaultExamCenters || []}
       />
       
       <StudentFormModal 
@@ -487,6 +502,7 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
         isOpen={!!autoFillDate} onClose={() => setAutoFillDate(null)} isGenerating={saveSlotLoading}
         teacherVehicles={profile?.vehicleTypes || []} defaultDuration={Number(profile?.lessonDuration) || 45} defaultDouble={!!profile?.defaultDoubleLesson}          
         teacherExamCenters={profile?.defaultExamCenters || []}
+        weekStartDate={autoFillDate || new Date()}
         onGenerate={async (config) => {
             if (autoFillDate) {
                 await autoScheduleWeek(autoFillDate, config, (msg) => { showToast(msg, 'success'); setAutoFillDate(null); }, (msg) => showToast(msg, 'error'));

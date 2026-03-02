@@ -194,35 +194,51 @@ export function useLessonManager(user: any, slots: any[], profile: any, holidays
         const dateStr = `${year}-${month}-${day}`;
 
         let currentMins = startOfDayMins; 
-        // --- [NEW] Calculate the actual block size ---
         const effectiveDuration = config.isDouble ? config.lessonDuration * 2 : config.lessonDuration;
 
         while (currentMins + effectiveDuration <= endOfDayMins) {
             const slotStartMins = currentMins;
             const slotEndMins = currentMins + effectiveDuration;
 
-            // RULE A: SKIP LUNCH (12:30 - 13:30)
-            if (config.skipLunch && slotStartMins < 810 && slotEndMins > 750) {
-                currentMins = 810; 
-                continue;
-            }
+            // --- RULE A: SCHEDULED LUNCH BREAK (Creates a Blocked Slot) ---
+            if (config.hasLunch) {
+                const [lh, lm] = config.lunchStart.split(':').map(Number);
+                const [leh, lem] = config.lunchEnd.split(':').map(Number);
+                const lunchStartMins = lh * 60 + lm;
+                const lunchEndMins = leh * 60 + lem;
 
-            // --- UPDATED RULE B: RESTRICTED ZONES ---
-            const isHoliday = !!holidays[dateStr]; // Check our new dictionary
-
-            // Only apply restrictions if it's NOT a Sunday (0) AND NOT a Holiday
-            if (dayOfWeek !== 0 && !isHoliday) { 
-                // Morning Restriction (07:30 - 09:30)
-                const hitsMorning = slotStartMins < 570 && slotEndMins > 450;
-                if (hitsMorning) {
-                    currentMins = 570; // Snap to 09:30 AM
+                // If the current generation time hits your lunch window
+                if (slotStartMins < lunchEndMins && slotEndMins > lunchStartMins) {
+                    const newSlotRef = doc(collection(db, "slots"));
+                    batch.set(newSlotRef, {
+                        teacherId: user.uid,
+                        date: dateStr,
+                        time: config.lunchStart,
+                        endTime: config.lunchEnd,
+                        duration: lunchEndMins - lunchStartMins,
+                        status: 'Blocked',
+                        // "type" 'lunch' matches your BLOCK_REASONS constant for the Edit modal
+                        type: 'lunch', 
+                        blockReason: 'block_reason.lunch',
+                        createdAt: new Date().toISOString()
+                    });
+                    
+                    currentMins = lunchEndMins; // Move the clock to after lunch
                     continue;
                 }
-                
-                // Evening Restriction (16:30 - 19:30)
-                const hitsEvening = dayOfWeek !== 6 && (slotStartMins < 1170 && slotEndMins > 990); 
-                if (hitsEvening) {
-                    currentMins = 1170; // Snap to 19:30 PM
+            }
+
+            // --- RULE B: RESTRICTED ZONES ---
+            const isHoliday = !!holidays[dateStr];
+            if (dayOfWeek !== 0 && !isHoliday) { 
+                // Morning (07:30 - 09:30)
+                if (slotStartMins < 570 && slotEndMins > 450) {
+                    currentMins = 570; 
+                    continue;
+                }
+                // Evening (16:30 - 19:30)
+                if (dayOfWeek !== 6 && (slotStartMins < 1170 && slotEndMins > 990)) { 
+                    currentMins = 1170; 
                     continue;
                 }
             }
@@ -315,9 +331,17 @@ export function useLessonManager(user: any, slots: any[], profile: any, holidays
   const copyWeekToNext = async (
     slotsToCopy: any[], 
     onSuccess: (msg: string) => void, 
-    onError: (msg: string) => void
+    onError: (msg: string) => void,
+    onInfo?: (msg: string) => void // <-- [NEW] Add the gentle callback
   ) => {
-    if (!user || slotsToCopy.length === 0) return;
+    if (!user) return;
+    
+    // [NEW] Centralized empty check using the gentle toast
+    if (slotsToCopy.length === 0) {
+        if (onInfo) onInfo("No lessons found in this week to copy.");
+        return;
+    }
+
     setSaveLoading(true);
 
     try {

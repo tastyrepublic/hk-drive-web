@@ -20,11 +20,11 @@ interface Props {
   slots: any[];
   setEditingSlot: (slot: any) => void;
   lessonDuration: number; 
-  onPublishDrafts: () => Promise<void>;
+  onPublishDrafts: (draftsToPublish: any[]) => Promise<void>;
   onOpenAutoFill: (weekStartDate: Date) => void;
-  onCopyWeek: (slotsToCopy: any[], onSuccess: (msg: string) => void, onError: (msg: string) => void) => Promise<void>;
+  onCopyWeek: (slotsToCopy: any[], onSuccess: (msg: string) => void, onError: (msg: string) => void, onInfo?: (msg: string) => void) => Promise<void>;
   onSlotMove?: (originalSlot: any, newDate: string, newTime: string, status: string) => void;
-  showToast?: (message: string, type?: 'success' | 'error') => void;
+  showToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
   onDeleteSlot?: (slot: any) => void;}
 
 const HOURS = Array.from({ length: 18 }, (_, i) => i + 6);
@@ -266,8 +266,35 @@ export function DiaryView({
   });
   const [isPlanningMode, setIsPlanningMode] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
-  const draftSlots = slots.filter(s => s.status === 'Draft');
+  const [isCopying, setIsCopying] = useState(false);
   
+  // 1. Calculate the visible days FIRST
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    const dayOfWeek = d.getDay();
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    d.setDate(d.getDate() + diffToMonday + i + (weekOffset * 7));
+    return d;
+  });
+
+  // 2. Convert them to string format (YYYY-MM-DD)
+  const weekDates = days.map(d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+
+  // 3. Filter drafts so it ONLY counts the ones in the current week!
+  const draftSlots = slots.filter(s => s.status === 'Draft' && weekDates.includes(s.date));
+  
+  // --- [NEW] BUTTON PROTECTIONS ---
+  // Get all slots for this currently viewed week to check if it's empty
+  const slotsThisWeek = slots.filter(s => weekDates.includes(s.date));
+  const hasSlotsThisWeek = slotsThisWeek.length > 0;
+
+  // Check if the Sunday (days[6]) of the currently viewed week is entirely in the past
+  const isPastWeek = (() => {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return days[6] < today;
+  })();
+
   const [localSlots, setLocalSlots] = useState<any[]>([]);
   useEffect(() => { setLocalSlots(slots || []); }, [slots]);
 
@@ -380,14 +407,6 @@ export function DiaryView({
     isPanning.current = false;
     e.currentTarget.releasePointerCapture(e.pointerId);
   };
-
-  const days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    const dayOfWeek = d.getDay();
-    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    d.setDate(d.getDate() + diffToMonday + i + (weekOffset * 7));
-    return d;
-  });
 
   useEffect(() => {
     const updateNow = () => {
@@ -569,63 +588,82 @@ export function DiaryView({
               {(draftSlots.length > 0 || isPublishing) && (
                 <button onClick={async () => { 
                     setIsPublishing(true); 
-                    await onPublishDrafts(); 
+                    await onPublishDrafts(draftSlots); 
                     setIsPublishing(false); 
                     setIsPlanningMode(false); 
                   }}
                   disabled={isPublishing}
-                  className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-1.5 rounded-lg font-bold text-xs shadow-lg active:scale-95 transition-all"
+                  className="flex items-center gap-2 bg-green-500/20 border border-green-500/50 text-green-400 hover:bg-green-500 hover:text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-all"
                 >
                   {isPublishing ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                   {/* [NEW] Change text to "Publishing..." so it doesn't say "Publish 0 Drafts" */}
-                  <span>{isPublishing ? 'Publishing...' : `Publish ${draftSlots.length} Drafts`}</span>
+                  <span>{isPublishing ? 'Publishing...' : `Publish ${draftSlots.length} Drafts This Week`}</span>
                 </button>
               )}
 
               <button onClick={() => setEditingSlot({ status: isPlanningMode ? 'Draft' : 'Booked' }) }
-                className="flex items-center gap-2 bg-orange text-white px-3 py-1.5 rounded-lg font-bold text-xs shadow-lg active:scale-95 transition-transform"
+                className="flex items-center gap-2 bg-orange/20 border border-orange/50 text-orange hover:bg-orange hover:text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-all"
               >
                 <Plus size={16} strokeWidth={3} />
                 <span className="hidden sm:inline">Add Lesson</span>
               </button>
               
-              <button onClick={() => { onOpenAutoFill(days[0]); setIsPlanningMode(true); }}
-                className="flex items-center gap-2 bg-purple-500/20 border border-purple-500/50 text-purple-400 hover:bg-purple-500 hover:text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-all shadow-[0_0_15px_rgba(168,85,247,0.15)] hover:shadow-[0_0_20px_rgba(168,85,247,0.4)]"
-              >
-                <Sparkles size={16} />
-                <span className="hidden sm:inline">Auto-Fill Week</span>
-              </button>
-
-              <button onClick={async () => {
-      setIsPublishing(true);
-      const weekDates = days.map(d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
-      const slotsToCopy = slots.filter(s => weekDates.includes(s.date));
-      
-      // Replaced with clean toast notifications
-      await onCopyWeek(
-        slotsToCopy, 
-        (msg) => showToast?.(msg, 'success'), 
-        (msg) => showToast?.(msg, 'error')
-      );
-      
-      setIsPublishing(false);
-      setIsPlanningMode(true);
-    }}
-    disabled={isPublishing}
-    className="flex items-center gap-2 bg-blue-500/20 border border-blue-500/50 text-blue-400 hover:bg-blue-500 hover:text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-all"
-  >
-    <Calendar size={16} />
-    <span className="hidden sm:inline">Copy to Next Week</span>
-  </button>
-              
-              <button onClick={() => setIsPlanningMode(!isPlanningMode)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold text-xs transition-colors border ${
-                  isPlanningMode ? 'bg-purple-500/20 text-purple-400 border-purple-500/50' : 'bg-midnight text-textGrey border-gray-800 hover:text-purple-400'
+              <button 
+                onClick={() => { onOpenAutoFill(days[0]); setIsPlanningMode(true); }}
+                disabled={isPastWeek} // [NEW] Disable if past
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${
+                    isPastWeek 
+                        ? 'bg-gray-800 text-gray-500 border border-gray-700 cursor-not-allowed opacity-50' 
+                        : 'bg-purple-500/20 border border-purple-500/50 text-purple-400 hover:bg-purple-500 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.15)] hover:shadow-[0_0_20px_rgba(168,85,247,0.4)]'
                 }`}
               >
                 <Sparkles size={16} />
-                <span className="hidden sm:inline">{isPlanningMode ? 'Planning Active' : 'Plan Schedule'}</span>
+                <span className="hidden sm:inline">
+                    {isPastWeek ? 'Past Week Locked' : 'Auto-Fill Week'}
+                </span>
               </button>
+
+              <button onClick={async () => {
+                  setIsCopying(true); 
+                  // [FIXED] Use the array we already calculated instead of re-filtering
+                  await onCopyWeek(
+                    slotsThisWeek, 
+                    (msg) => showToast?.(msg, 'success'), 
+                    (msg) => showToast?.(msg, 'error'),
+                    (msg) => showToast?.(msg, 'info')
+                  );
+                  setIsCopying(false); 
+                  setIsPlanningMode(true);
+                }}
+                // [NEW] Disable if Firebase is loading OR if there are zero slots
+                disabled={isCopying || isPublishing || !hasSlotsThisWeek} 
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${
+                    !hasSlotsThisWeek
+                        ? 'bg-gray-800 text-gray-500 border border-gray-700 cursor-not-allowed opacity-50'
+                        : 'bg-blue-500/20 border border-blue-500/50 text-blue-400 hover:bg-blue-500 hover:text-white'
+                }`}
+              >
+                {isCopying ? <Loader2 size={16} className="animate-spin" /> : <Calendar size={16} />}
+                <span className="hidden sm:inline">
+                  {isCopying ? 'Copying...' : !hasSlotsThisWeek ? 'No Slots to Copy' : 'Copy to Next Week'}
+                </span>
+              </button>
+              
+              <button 
+    onClick={() => setIsPlanningMode(!isPlanningMode)}
+    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-300 outline-none border
+      ${isPlanningMode 
+        ? 'bg-purple-500 border-purple-500 text-white shadow-[0_0_15px_rgba(168,85,247,0.4)] animate-pulse' 
+        : 'bg-purple-500/20 border-purple-500/50 text-purple-400 hover:bg-purple-500 hover:text-white hover:border-purple-500'
+      }
+    `}
+    style={isPlanningMode ? { animationDuration: '3s' } : {}}
+  >
+    <Sparkles size={16} />
+    <span className="hidden sm:inline">
+      {isPlanningMode ? 'Exit Planning' : 'Planning Mode'}
+    </span>
+  </button>
             </div>
           </div>
           
