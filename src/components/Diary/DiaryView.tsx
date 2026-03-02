@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom'; 
-import { Calendar, ChevronLeft, ChevronRight, Plus, Sparkles, AlertCircle, Send, Loader2, Edit2, Trash2, FileText } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, Plus, Sparkles, AlertCircle, Send, Loader2, Edit2, Trash2, FileText, Eraser, CheckSquare, Check, X, Settings as SettingsIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   DndContext, 
@@ -17,6 +17,7 @@ import { RESTRICTED_HOURS } from '../../constants/list';
 import { getSmartStartTime } from '../../scheduler';
 
 interface Props {
+  isDark?: boolean;  
   slots: any[];
   setEditingSlot: (slot: any) => void;
   lessonDuration: number; 
@@ -25,7 +26,9 @@ interface Props {
   onCopyWeek: (slotsToCopy: any[], onSuccess: (msg: string) => void, onError: (msg: string) => void, onInfo?: (msg: string) => void) => Promise<void>;
   onSlotMove?: (originalSlot: any, newDate: string, newTime: string, status: string) => void;
   showToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
-  onDeleteSlot?: (slot: any) => void;}
+  onDeleteSlot?: (slot: any) => void;
+  onBulkDelete?: (slotIds: string[], typeLabel: string) => void;}
+  
 
 const HOURS = Array.from({ length: 18 }, (_, i) => i + 6);
 const CELL_HEIGHT = 110; 
@@ -130,8 +133,13 @@ function GhostIndicator({ slot, snappedY, show }: any) {
     );
 }
 
-function DraggableSlot({ slot, setEditingSlot, onContextMenu }: any) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: slot.id, data: slot });
+function DraggableSlot({ slot, setEditingSlot, onContextMenu, isSelectMode, isSelected, onToggleSelect }: any) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ 
+      id: slot.id, 
+      data: slot,
+      disabled: isSelectMode 
+  });
+  
   const startY = timeToPixels(slot.time);
   
   let durationMins = slot.duration || 60;
@@ -142,19 +150,74 @@ function DraggableSlot({ slot, setEditingSlot, onContextMenu }: any) {
   }
   const height = (durationMins / 60) * CELL_HEIGHT - 2;
 
+  // [NEW] Determine baseline Z
+  const baseZ = isSelectMode ? 30 : 20;
+
   return (
-    <div 
+    <motion.div 
       ref={setNodeRef} {...listeners} {...attributes}
-      onContextMenu={(e) => onContextMenu(e, slot)} 
-      className={`absolute left-[2px] right-[2px] ${isDragging ? 'opacity-0' : 'opacity-100'}`}
+      onContextMenu={(e) => {
+          if (isSelectMode) {
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+          }
+          onContextMenu(e, slot);
+      }} 
+      onClickCapture={(e) => {
+          if (isSelectMode) {
+              e.stopPropagation();
+              e.preventDefault();
+              onToggleSelect(slot.id);
+          }
+      }}
+      
+      // --- [FIXED] SMART FRAMER VARIANTS ---
+      variants={{
+          rest: { 
+              scale: 1, 
+              y: 0, 
+              zIndex: baseZ, 
+              // Wait 0.15s before dropping the z-index so the shadow shrinks smoothly!
+              transition: { duration: 0.15, zIndex: { delay: 0.15 } } 
+          },
+          hover: { 
+              scale: 1.03, 
+              y: -4, 
+              zIndex: 50, 
+              // Instantly pop z-index to 50 on hover
+              transition: { duration: 0.15, zIndex: { duration: 0 } } 
+          }
+      }}
+      initial="rest"
+      animate="rest"
+      whileHover={isSelectMode ? "hover" : "rest"}
+      
+      // [FIXED] Removed the z-20 and z-30 Tailwind classes here
+      className={`absolute left-[2px] right-[2px] rounded-tl-md rounded-tr-md rounded-bl-md rounded-br-3xl select-none group ${
+          isDragging ? 'opacity-0' : 'opacity-100'
+      } ${
+          isSelectMode ? 'cursor-pointer' : ''
+      }`}
       style={{ top: `${startY}px`, height: `${height}px`, touchAction: 'none' }}
     >
       <DiaryCard slot={slot} setEditingSlot={setEditingSlot} />
-    </div>
+      
+      {/* Checkmark Overlay */}
+      <div className={`absolute inset-0 rounded-tl-md rounded-tr-md rounded-bl-md rounded-br-3xl border-2 transition-all pointer-events-none 
+          duration-150
+          ${isSelectMode ? 'opacity-100 shadow-md shadow-black/25' : 'opacity-0 shadow-none'} 
+          ${isSelected ? 'border-blue-500 bg-blue-500/20' : 'border-transparent group-hover:border-blue-500/50'}`}
+      >
+          <div className={`absolute top-2 right-2 bg-blue-500 text-white rounded-full p-0.5 shadow-md transition-transform duration-150 ${isSelected && isSelectMode ? 'scale-100' : 'scale-0'}`}>
+              <Check size={14} strokeWidth={4} />
+          </div>
+      </div>
+    </motion.div>
   );
 }
 
-function DayColumn({ dateStr, dayOfWeek, isPublicHoliday, children, overId, currentDragInfo, todayStart, currentHour, dayTime, daySlots, lessonDuration, setEditingSlot, isPlanningMode, currentMinute }: any) {
+function DayColumn({ dateStr, dayOfWeek, isPublicHoliday, children, overId, currentDragInfo, todayStart, currentHour, dayTime, daySlots, lessonDuration, setEditingSlot, isPlanningMode, currentMinute, isSelectMode }: any) {
   const { setNodeRef } = useDroppable({ id: dateStr });
   const isOver = overId === dateStr;
 
@@ -167,7 +230,7 @@ function DayColumn({ dateStr, dayOfWeek, isPublicHoliday, children, overId, curr
   }, [dayOfWeek, isPublicHoliday]);
 
   return (
-    <div ref={setNodeRef} className={`flex-1 min-w-0 border-r border-gray-800 last:border-r-0 relative h-full transition-colors ${isOver ? 'bg-white/5' : 'bg-slate'}`}>
+    <div ref={setNodeRef} className={`flex-1 min-w-0 border-r border-gray-800 last:border-r-0 relative h-full transition-[background-color] ${isOver ? 'bg-white/5' : 'bg-slate'}`}>
       
       {restrictedZones.map((zone, idx) => (
           <div key={`rest-${idx}`} className="absolute left-0 right-0 z-0 pointer-events-none overflow-hidden"
@@ -190,10 +253,13 @@ function DayColumn({ dateStr, dayOfWeek, isPublicHoliday, children, overId, curr
           const isCurrentHour = dayTime === todayStart && h === currentHour;
           
           let cellStyle: React.CSSProperties = { height: CELL_HEIGHT };
-          let cellClass = 'w-full relative group transition-colors duration-200 ease-in-out border-b border-gray-800/30 ';
+          let cellClass = 'w-full relative group transition-[background-color] duration-200 ease-in-out border-b border-gray-800 ';
 
+          // 2. Add the cursor-default check for Select Mode
           if (isPastHour) {
               cellClass += 'bg-black/40 cursor-not-allowed'; 
+          } else if (isSelectMode) {
+              cellClass += 'cursor-default'; // [NEW] Disable pointer in select mode
           } else if (isCurrentHour) {
               const percent = Math.round((currentMinute / 60) * 100);
               cellStyle.background = `linear-gradient(to bottom, rgba(0,0,0,0.4) ${percent}%, transparent ${percent}%)`;
@@ -209,7 +275,7 @@ function DayColumn({ dateStr, dayOfWeek, isPublicHoliday, children, overId, curr
               className={cellClass}
               onClick={(e) => {
                   e.stopPropagation();
-                  if (isPastHour) return; 
+                  if (isPastHour || isSelectMode) return; 
 
                   let smartTime = getSmartStartTime(h, daySlots, lessonDuration);
 
@@ -240,13 +306,17 @@ function DayColumn({ dateStr, dayOfWeek, isPublicHoliday, children, overId, curr
           );
       })}
 
+
       {isOver && currentDragInfo && <GhostIndicator show={true} slot={currentDragInfo.slot} snappedY={currentDragInfo.snappedY} />}
+      
+      {/* The slots (which are z-20 and z-30) render securely on top of the blur! */}
       {children}
     </div>
   );
 }
 
 export function DiaryView({ 
+  isDark,  
   slots, 
   setEditingSlot, 
   lessonDuration = 60, 
@@ -256,6 +326,7 @@ export function DiaryView({
   onSlotMove,
   showToast,
   onDeleteSlot,
+  onBulkDelete,
 }: Props) {
   
   const [[weekOffset, direction], setWeekOffset] = useState([0, 0]);
@@ -267,6 +338,31 @@ export function DiaryView({
   const [isPlanningMode, setIsPlanningMode] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
+
+  // --- [NEW] SELECT MODE STATE ---
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  // [NEW] Instantly clear selection and exit mode if the user changes the week
+  useEffect(() => {
+      setIsSelectMode(false);
+      setSelectedIds([]);
+  }, [weekOffset]);
+
+  const toggleSelection = useCallback((id: string) => {
+      setSelectedIds(prev => prev.includes(id) ? prev.filter(sId => sId !== id) : [...prev, id]);
+  }, []);
+
+  const toggleDaySelection = useCallback((daySlots: any[]) => {
+      const daySlotIds = daySlots.map(s => s.id);
+      const allSelected = daySlotIds.length > 0 && daySlotIds.every(id => selectedIds.includes(id));
+      
+      if (allSelected) { // Deselect all
+          setSelectedIds(prev => prev.filter(id => !daySlotIds.includes(id)));
+      } else { // Select all
+          setSelectedIds(prev => Array.from(new Set([...prev, ...daySlotIds])));
+      }
+  }, [selectedIds]);
   
   // 1. Calculate the visible days FIRST
   const days = Array.from({ length: 7 }, (_, i) => {
@@ -287,6 +383,15 @@ export function DiaryView({
   // Get all slots for this currently viewed week to check if it's empty
   const slotsThisWeek = slots.filter(s => weekDates.includes(s.date));
   const hasSlotsThisWeek = slotsThisWeek.length > 0;
+
+  // Categorize slots for the clear menu
+  const draftsThisWeek = slotsThisWeek.filter(s => s.status === 'Draft');
+  const openThisWeek = slotsThisWeek.filter(s => s.status === 'Open');
+  const blockedThisWeek = slotsThisWeek.filter(s => s.status === 'Blocked');
+  const bookedThisWeek = slotsThisWeek.filter(s => s.status === 'Booked');
+  const unbookedThisWeek = slotsThisWeek.filter(s => s.status !== 'Booked');
+
+  const [showManageMenu, setShowManageMenu] = useState(false);
 
   // Check if the Sunday (days[6]) of the currently viewed week is entirely in the past
   const isPastWeek = (() => {
@@ -563,8 +668,6 @@ export function DiaryView({
             const slot = e.active.data.current;
             if (!slot) return; 
             setActiveSlot(slot);
-            
-            // [NEW] Instantly show the starting time before the user even moves the mouse!
             setLiveTime(slot.time || "00:00"); 
         }} 
         onDragMove={handleDragMove} 
@@ -573,7 +676,8 @@ export function DiaryView({
     >   
       <div 
           onContextMenu={(e) => e.preventDefault()} 
-          className="flex flex-col h-[calc(100vh-160px)] bg-slate rounded-2xl border border-gray-800 overflow-hidden relative shadow-2xl transition-colors duration-300"
+          // [FIXED] Changed 'transition-colors' to 'transition-[background-color]'
+          className="flex flex-col h-[calc(100vh-160px)] bg-slate rounded-2xl border border-gray-800 overflow-hidden relative transition-[background-color] duration-300 select-none"
       >
         
         {/* HEADER */}
@@ -582,88 +686,142 @@ export function DiaryView({
             <h2 className="text-xl font-black text-white">
               {days[0].toLocaleDateString('en-GB', { month: 'short' })} '{days[0].toLocaleDateString('en-GB', { year: '2-digit' })}
             </h2>
-            <div className="flex items-center gap-2">
+            
+            <div className="flex items-center gap-1.5 sm:gap-2">
               
-              {/* [NEW] Keep button visible if it is currently publishing */}
+              {/* 1. CONTEXTUAL PRIMARY: Publish (Only shows when needed) */}
               {(draftSlots.length > 0 || isPublishing) && (
                 <button onClick={async () => { 
-                    setIsPublishing(true); 
-                    await onPublishDrafts(draftSlots); 
-                    setIsPublishing(false); 
-                    setIsPlanningMode(false); 
+                    setIsPublishing(true); await onPublishDrafts(draftSlots); setIsPublishing(false); setIsPlanningMode(false); 
                   }}
-                  disabled={isPublishing}
-                  className="flex items-center gap-2 bg-green-500/20 border border-green-500/50 text-green-400 hover:bg-green-500 hover:text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-all"
+                  disabled={isPublishing || isSelectMode} 
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${
+                      isSelectMode
+                          ? 'bg-gray-800 text-gray-500 cursor-not-allowed opacity-50'
+                          : 'bg-green-500 text-white shadow-[0_0_15px_rgba(34,197,94,0.3)] hover:bg-green-400'
+                  }`}
                 >
                   {isPublishing ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                  {/* [NEW] Change text to "Publishing..." so it doesn't say "Publish 0 Drafts" */}
-                  <span>{isPublishing ? 'Publishing...' : `Publish ${draftSlots.length} Drafts This Week`}</span>
+                  <span className="hidden sm:inline">{isPublishing ? 'Publishing...' : `Publish ${draftSlots.length}`}</span>
                 </button>
               )}
 
-              <button onClick={() => setEditingSlot({ status: isPlanningMode ? 'Draft' : 'Booked' }) }
-                className="flex items-center gap-2 bg-orange/20 border border-orange/50 text-orange hover:bg-orange hover:text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-all"
+              {/* 2. ABSOLUTE PRIMARY: Add Lesson */}
+              <button 
+                onClick={() => setEditingSlot({ status: isPlanningMode ? 'Draft' : 'Booked' }) }
+                disabled={isSelectMode}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${
+                    isSelectMode
+                        ? 'bg-gray-800 text-gray-500 cursor-not-allowed opacity-50'
+                        : 'bg-orange text-white hover:bg-orange/90 shadow-[0_0_10px_rgba(249,115,22,0.2)]'
+                }`}
               >
                 <Plus size={16} strokeWidth={3} />
                 <span className="hidden sm:inline">Add Lesson</span>
               </button>
-              
-              <button 
-                onClick={() => { onOpenAutoFill(days[0]); setIsPlanningMode(true); }}
-                disabled={isPastWeek} // [NEW] Disable if past
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${
-                    isPastWeek 
-                        ? 'bg-gray-800 text-gray-500 border border-gray-700 cursor-not-allowed opacity-50' 
-                        : 'bg-purple-500/20 border border-purple-500/50 text-purple-400 hover:bg-purple-500 hover:text-white shadow-[0_0_15px_rgba(168,85,247,0.15)] hover:shadow-[0_0_20px_rgba(168,85,247,0.4)]'
-                }`}
-              >
-                <Sparkles size={16} />
-                <span className="hidden sm:inline">
-                    {isPastWeek ? 'Past Week Locked' : 'Auto-Fill Week'}
-                </span>
-              </button>
 
-              <button onClick={async () => {
-                  setIsCopying(true); 
-                  // [FIXED] Use the array we already calculated instead of re-filtering
-                  await onCopyWeek(
-                    slotsThisWeek, 
-                    (msg) => showToast?.(msg, 'success'), 
-                    (msg) => showToast?.(msg, 'error'),
-                    (msg) => showToast?.(msg, 'info')
-                  );
-                  setIsCopying(false); 
-                  setIsPlanningMode(true);
-                }}
-                // [NEW] Disable if Firebase is loading OR if there are zero slots
-                disabled={isCopying || isPublishing || !hasSlotsThisWeek} 
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${
-                    !hasSlotsThisWeek
-                        ? 'bg-gray-800 text-gray-500 border border-gray-700 cursor-not-allowed opacity-50'
-                        : 'bg-blue-500/20 border border-blue-500/50 text-blue-400 hover:bg-blue-500 hover:text-white'
-                }`}
-              >
-                {isCopying ? <Loader2 size={16} className="animate-spin" /> : <Calendar size={16} />}
-                <span className="hidden sm:inline">
-                  {isCopying ? 'Copying...' : !hasSlotsThisWeek ? 'No Slots to Copy' : 'Copy to Next Week'}
-                </span>
-              </button>
-              
-              <button 
-    onClick={() => setIsPlanningMode(!isPlanningMode)}
-    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold text-xs transition-all duration-300 outline-none border
-      ${isPlanningMode 
-        ? 'bg-purple-500 border-purple-500 text-white shadow-[0_0_15px_rgba(168,85,247,0.4)] animate-pulse' 
-        : 'bg-purple-500/20 border-purple-500/50 text-purple-400 hover:bg-purple-500 hover:text-white hover:border-purple-500'
-      }
-    `}
-    style={isPlanningMode ? { animationDuration: '3s' } : {}}
-  >
-    <Sparkles size={16} />
-    <span className="hidden sm:inline">
-      {isPlanningMode ? 'Exit Planning' : 'Planning Mode'}
-    </span>
-  </button>
+              <div className="w-[1px] h-6 bg-gray-800 mx-1 hidden sm:block" />
+
+              {/* 3. MODE TOGGLES: Muted until active */}
+              <div className="flex items-center bg-midnight border border-gray-800 rounded-lg p-0.5">
+                  <button 
+                    onClick={() => { setIsSelectMode(!isSelectMode); if (isSelectMode) setSelectedIds([]); }}
+                    disabled={!hasSlotsThisWeek}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md font-bold text-xs transition-all ${
+                        !hasSlotsThisWeek ? 'text-gray-600 cursor-not-allowed' :
+                        isSelectMode ? 'bg-blue-500 text-white shadow-sm' : 'text-textGrey hover:text-white hover:bg-gray-800'
+                    }`}
+                  >
+                    <CheckSquare size={14} /> 
+                    <span className="hidden lg:inline">Select</span>
+                  </button>
+
+                  <button 
+                    onClick={() => setIsPlanningMode(!isPlanningMode)}
+                    disabled={isSelectMode}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md font-bold text-xs transition-all ${
+                        isSelectMode ? 'text-gray-600 cursor-not-allowed' :
+                        isPlanningMode ? 'bg-purple-500 text-white shadow-sm' : 'text-textGrey hover:text-white hover:bg-gray-800'
+                    }`}
+                  >
+                    <Sparkles size={14} />
+                    <span className="hidden lg:inline">Planning</span>
+                  </button>
+              </div>
+
+              {/* 4. THE CLEANUP: "Manage Week" Dropdown */}
+              <div className="relative">
+                  <button 
+                      onClick={() => setShowManageMenu(!showManageMenu)}
+                      disabled={isSelectMode} 
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold text-xs transition-all border ${
+                          isSelectMode
+                              ? 'bg-gray-800 text-gray-500 border-gray-700 cursor-not-allowed opacity-50'
+                              : showManageMenu 
+                                  ? 'bg-gray-800 border-gray-600 text-white' 
+                                  : 'bg-slate border-gray-800 text-textGrey hover:text-white hover:border-gray-600'
+                      }`}
+                  >
+                      <SettingsIcon size={16} /> 
+                      <span className="hidden md:inline">Manage...</span>
+                  </button>
+
+                  {/* Dropdown Menu */}
+                  {showManageMenu && (
+                      <>
+                          <div className="fixed inset-0 z-[90]" onClick={() => setShowManageMenu(false)} />
+                          
+                          <div className="absolute top-full mt-2 right-0 w-56 bg-slate border border-gray-800 rounded-xl shadow-2xl z-[100] p-1.5 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-200">
+                              
+                              <button onClick={() => { onOpenAutoFill(days[0]); setIsPlanningMode(true); setShowManageMenu(false); }} disabled={isPastWeek} className="flex items-center gap-3 w-full text-left px-3 py-2.5 rounded-lg text-xs font-bold text-purple-400 hover:bg-purple-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                  <Sparkles size={16} /> Auto-Fill Week
+                              </button>
+                              
+                              <button onClick={async () => { setIsCopying(true); await onCopyWeek(slotsThisWeek, (msg) => showToast?.(msg, 'success'), (msg) => showToast?.(msg, 'error'), (msg) => showToast?.(msg, 'info')); setIsCopying(false); setIsPlanningMode(true); setShowManageMenu(false); }} disabled={isCopying || !hasSlotsThisWeek} className="flex items-center gap-3 w-full text-left px-3 py-2.5 rounded-lg text-xs font-bold text-blue-400 hover:bg-blue-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                  {isCopying ? <Loader2 size={16} className="animate-spin" /> : <Calendar size={16} />}
+                                  Copy to Next Week
+                              </button>
+
+                              {/* Smart Clear Options */}
+                              {unbookedThisWeek.length > 0 && (
+                                  <>
+                                      <div className="h-[1px] bg-gray-800 my-1 mx-2" />
+                                      <div className="px-3 py-1.5 text-[10px] uppercase font-black text-textGrey tracking-wider">Clear Slots</div>
+                                      
+                                      {/* Drafts: Gray base, Purple rollover */}
+                                      {draftsThisWeek.length > 0 && (
+                                          <button onClick={() => { onBulkDelete?.(draftsThisWeek.map(s => s.id), 'Drafts'); setShowManageMenu(false); }} className="text-left px-3 py-2 rounded-lg text-xs font-bold text-gray-300 hover:bg-purple-500/15 hover:text-purple-400 transition-colors">
+                                              Clear {draftsThisWeek.length} Drafts
+                                          </button>
+                                      )}
+                                      
+                                      {/* Open: Gray base, Yellow rollover */}
+                                      {openThisWeek.length > 0 && (
+                                          <button onClick={() => { onBulkDelete?.(openThisWeek.map(s => s.id), 'Open Slots'); setShowManageMenu(false); }} className="text-left px-3 py-2 rounded-lg text-xs font-bold text-gray-300 hover:bg-yellow-400/15 hover:text-yellow-400 transition-colors">
+                                              Clear {openThisWeek.length} Open Slots
+                                          </button>
+                                      )}
+
+                                      {/* Blocks: Gray base, Red rollover */}
+                                      {blockedThisWeek.length > 0 && (
+                                          <button onClick={() => { onBulkDelete?.(blockedThisWeek.map(s => s.id), 'Blocked Time'); setShowManageMenu(false); }} className="text-left px-3 py-2 rounded-lg text-xs font-bold text-gray-300 hover:bg-red-500/15 hover:text-red-400 transition-colors">
+                                              Clear {blockedThisWeek.length} Blocks
+                                          </button>
+                                      )}
+                                      
+                                      {/* SOLID RED for the "Nuke" button */}
+                                      {unbookedThisWeek.length > 1 && (
+                                          <button onClick={() => { onBulkDelete?.(unbookedThisWeek.map(s => s.id), bookedThisWeek.length > 0 ? 'Unbooked Slots' : 'Entire Week'); setShowManageMenu(false); }} className="flex items-center gap-2 text-left px-3 py-2 rounded-lg text-xs font-bold text-red-500 hover:bg-red-500 hover:text-white transition-colors mt-1">
+                                              <Eraser size={14} /> 
+                                              {bookedThisWeek.length > 0 ? `Clear All Unbooked (${unbookedThisWeek.length})` : `Clear Entire Week`}
+                                          </button>
+                                      )}
+                                  </>
+                              )}
+                          </div>
+                      </>
+                  )}
+              </div>
             </div>
           </div>
           
@@ -695,7 +853,7 @@ export function DiaryView({
         {/* DAY HEADER */}
         <div className="flex border-b border-gray-800 bg-slate z-40 shadow-sm relative overflow-hidden">
           <div className="w-10 flex-shrink-0 bg-slate border-r border-gray-800 z-10" />
-          <div className="flex-1 relative h-[60px] overflow-hidden">
+          <div className={`flex-1 relative overflow-hidden transition-[height] duration-200 ease-in-out ${isSelectMode ? 'h-[80px]' : 'h-[60px]'}`}>
               <AnimatePresence mode="wait" custom={direction}>
                   <motion.div
                       key={weekOffset} custom={direction} variants={slideVariants} initial="enter" animate="center" exit="exit" transition={swipeTransition}
@@ -712,9 +870,27 @@ export function DiaryView({
                                   <div className={`text-[9px] uppercase font-black tracking-tighter ${isToday ? 'text-orange' : 'text-textGrey'}`}>
                                       {day.toLocaleDateString('en-GB', { weekday: 'short' })}
                                   </div>
-                                  <div className="flex flex-col items-center gap-1 w-full px-1.5 mt-0.5">
+                                  <div className="flex flex-col items-center gap-1 w-full px-1.5 mt-0.5 pb-1">
                                       <div className={`text-xs font-bold leading-none ${isToday ? 'text-orange' : 'text-white'}`}>{day.getDate()}</div>
-                                      {holidayName && <div title={holidayName} className="text-[8px] font-black uppercase tracking-tighter text-red-500/80 w-full truncate text-center mt-0.5">{holidayName}</div>}
+                                      
+                                      {/* [NEW] Quick Day Select */}
+                                      {isSelectMode && (
+                                          <button 
+                                              onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  const dSlots = slotsByDate[dateKey] || [];
+                                                  if (dSlots.length > 0) toggleDaySelection(dSlots);
+                                              }}
+                                              className={`mt-1 p-0.5 rounded transition-colors border ${
+                                                  (slotsByDate[dateKey] || []).length > 0 && (slotsByDate[dateKey] || []).every((s:any) => selectedIds.includes(s.id))
+                                                      ? 'bg-blue-500 border-blue-500 text-white' 
+                                                      : 'bg-transparent border-gray-600 text-transparent hover:border-blue-400'
+                                              }`}
+                                          >
+                                              <Check size={10} />
+                                          </button>
+                                      )}
+                                      {holidayName && !isSelectMode && <div title={holidayName} className="text-[8px] font-black uppercase tracking-tighter text-red-500/80 w-full truncate text-center mt-0.5">{holidayName}</div>}
                                   </div>
                                   {isToday && <div className="absolute bottom-0 left-0 right-0 h-1 bg-orange" />}
                               </div>
@@ -732,7 +908,7 @@ export function DiaryView({
         >
             <div className="w-full relative flex" style={{ height: CONTENT_HEIGHT }}>
                 
-                {/* LEFT HOURS COLUMN */}
+                {/* 1. LEFT HOURS COLUMN */}
                 <div 
                   onPointerDown={handlePointerDown}
                   onPointerMove={handlePointerMove}
@@ -742,27 +918,31 @@ export function DiaryView({
                   style={{ touchAction: 'none' }} 
                 >
                     {HOURS.map((hour, idx) => (
-                    <div key={hour} style={{ height: CELL_HEIGHT }} className={`w-full flex items-start justify-center p-1 text-[9px] text-textGrey font-bold ${idx === HOURS.length - 1 ? '' : 'border-b border-gray-800/40 pointer-events-none'}`}>
+                    <div key={hour} style={{ height: CELL_HEIGHT }} className={`w-full flex items-start justify-center p-1 text-[9px] text-textGrey font-bold ${idx === HOURS.length - 1 ? '' : 'border-b border-gray-800 pointer-events-none'}`}>
                         {hour.toString().padStart(2, '0')}
                     </div>
                     ))}
                 </div>
 
-                {/* GRID COLUMNS */}
+                {/* 2. GRID COLUMNS */}
                 <div className="flex-1 relative h-full overflow-hidden">
-                    {nowPosition > 0 && weekOffset === 0 && (
-                    <div className="absolute left-0 right-0 z-50 pointer-events-none flex items-center" style={{ top: `${nowPosition}px` }}>
-                        <div className="w-full h-[0.5px] bg-orange/80" />
-                        <div className="absolute -left-1.5 w-3 h-3 rounded-full bg-orange animate-dot-glow shadow-[0_0_10px_rgba(255,165,0,0.5)]" />
-                    </div>
-                    )}
-
+                    {/* Make sure no old orange lines or dots are left in here! */}
+                    
                     <AnimatePresence mode="wait" custom={direction}>
                         <motion.div
                             key={weekOffset} custom={direction} variants={slideVariants} initial="enter" animate="center" exit="exit" transition={swipeTransition}
-                            className="flex w-full h-full"
+                            className="flex w-full h-full relative"
                             style={{ willChange: "transform, opacity" }}
                         >
+                            {/* --- UNIFIED CINEMATIC BLUR SANDWICH --- */}
+                            <div 
+                                className={`absolute inset-0 z-10 pointer-events-none transition-all duration-150 ease-in-out ${
+                                    isSelectMode 
+                                        ? `${isDark ? 'bg-midnight/50' : 'bg-white/60'} backdrop-blur-[3px] opacity-100` 
+                                        : 'bg-transparent backdrop-blur-none opacity-0'
+                                }`} 
+                            />
+
                             {days.map((day, dayIdx) => {
                             const dateString = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
                             
@@ -779,6 +959,9 @@ export function DiaryView({
                                 dayTime={dayTime} 
                                 daySlots={daySlots} lessonDuration={lessonDuration}
                                 setEditingSlot={setEditingSlot} isPlanningMode={isPlanningMode}
+                                
+                                isSelectMode={isSelectMode}
+                                isDark={isDark}
                               >
                                   {daySlots.map((slot: any) => (
                                       <DraggableSlot 
@@ -786,6 +969,9 @@ export function DiaryView({
                                         slot={slot} 
                                         setEditingSlot={setEditingSlot} 
                                         onContextMenu={handleContextMenu}
+                                        isSelectMode={isSelectMode}
+                                        isSelected={selectedIds.includes(slot.id)}
+                                        onToggleSelect={toggleSelection}
                                       />
                                   ))}
                                 </DayColumn>
@@ -794,10 +980,74 @@ export function DiaryView({
                         </motion.div>
                     </AnimatePresence>
                 </div>
+
+                {/* --- 3. [NEW] THE BULLETPROOF TIME INDICATOR --- */}
+                {nowPosition > 0 && weekOffset === 0 && (
+                    <div 
+                        className="absolute left-0 right-0 z-[100] pointer-events-none" 
+                        style={{ top: `${nowPosition}px` }}
+                    >
+                        {/* THE LINE: left-10 forces it to start exactly after the 40px Time Column. -mt-[0.5px] nudges it dead center. */}
+                        <div className="absolute left-10 right-0 h-[1px] bg-orange/80 -mt-[0.5px]" />
+                        
+                        {/* THE DOT WRAPPER: Anchored exactly at the 40px intersection. 
+                            -ml-[5px] and -mt-[5px] pulls it mathematically dead center. 
+                            Because the animation is on the INNER div, it can never break our layout again! */}
+                        <div className="absolute left-10 top-0 -ml-[5px] -mt-[5px]">
+                            <div className="w-2.5 h-2.5 bg-orange rounded-full shadow-[0_0_10px_rgba(255,165,0,0.8)] animate-dot-glow" />
+                        </div>
+                    </div>
+                )}
+
             </div>
         </div>
       </div> 
       
+      {/* --- [NEW] FLOATING ACTION BAR --- */}
+        {/* --- [NEW] FLOATING ACTION BAR --- */}
+        <AnimatePresence>
+            {isSelectMode && selectedIds.length > 0 && (
+              <motion.div 
+                initial={{ y: 100, x: "-50%", opacity: 0 }}
+                animate={{ y: 0, x: "-50%", opacity: 1 }}
+                exit={{ y: 100, x: "-50%", opacity: 0 }}
+                
+                // [FIXED] Changed to shadow-sm and shadow-black/5 for an ultra-light, crisp lift!
+                className="absolute bottom-20 left-1/2 bg-slate border border-gray-700 shadow-xl shadow-black/5 rounded-full px-4 sm:px-6 py-2.5 sm:py-3 flex items-center gap-3 sm:gap-4 z-[100]"
+              >
+                <span className="text-sm font-bold text-white whitespace-nowrap">
+                  {selectedIds.length} Selected
+                </span>
+                
+                <div className="w-[1px] h-6 bg-gray-700" />
+                
+                <button 
+                  onClick={() => showToast?.('Bulk edit modal coming soon!', 'info')}
+                  // [UPDATED] Matches the translucent orange glow of the "Add Lesson" button
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold text-xs transition-all bg-orange/20 border border-orange/50 text-orange hover:bg-orange hover:text-white shadow-[0_0_15px_rgba(249,115,22,0.15)] hover:shadow-[0_0_20px_rgba(249,115,22,0.4)]"
+              >
+                  <Edit2 size={14} /> <span className="hidden sm:inline">Edit</span>
+              </button>
+              
+              <button 
+                  onClick={() => {
+                      if (onBulkDelete) onBulkDelete(selectedIds, `${selectedIds.length} Selected Slots`);
+                      setIsSelectMode(false);
+                      setSelectedIds([]);
+                  }}
+                  // [UPDATED] Matches the translucent red glow of the "Clear" dropdown button
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold text-xs transition-all bg-red-500/20 border border-red-500/50 text-red-400 hover:bg-red-500 hover:text-white shadow-[0_0_15px_rgba(239,68,68,0.15)] hover:shadow-[0_0_20px_rgba(239,68,68,0.4)]"
+              >
+                  <Trash2 size={14} /> <span className="hidden sm:inline">Delete</span>
+              </button>
+                
+                <button onClick={() => { setSelectedIds([]); setIsSelectMode(false); }} className="p-2 rounded-full hover:bg-white/10 text-gray-400 transition-colors ml-1 sm:ml-2">
+                    <X size={16} />
+                </button>
+              </motion.div>
+            )}
+        </AnimatePresence>
+        
       {/* DragOverlay */}
       <DragOverlay dropAnimation={null}>
         <AnimatePresence>
@@ -820,7 +1070,6 @@ export function DiaryView({
             className="fixed z-[9999] bg-slate border border-gray-700 shadow-2xl rounded-lg py-1.5 min-w-[170px] overflow-hidden"
             style={{ top: contextMenu.y, left: contextMenu.x }}
           >
-            {/* The "Lesson Actions" header has been completely removed from here */}
             
             <button 
                 onClick={() => { setEditingSlot(contextMenu.slot); setContextMenu(null); }}
@@ -874,7 +1123,6 @@ export function DiaryView({
         </>,
         document.body
       )}
-
     </DndContext>
   );
 }

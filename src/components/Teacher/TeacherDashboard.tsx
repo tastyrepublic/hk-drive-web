@@ -95,7 +95,7 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
   const holidays = useHolidays();
   
   const { 
-    saveLesson, deleteLesson, autoScheduleWeek, copyWeekToNext, saveLoading: saveSlotLoading, validationMsg, setValidationMsg 
+    saveLesson, deleteLesson, autoScheduleWeek, copyWeekToNext, bulkDeleteLessons, saveLoading: saveSlotLoading, validationMsg, setValidationMsg 
   } = useLessonManager(user, slots, profile, holidays);
 
   const {
@@ -215,9 +215,14 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
 
     // 2. OPTIMISTIC UI: Only update the specific drafts passed in
     const draftIds = new Set(weeklyDrafts.map(d => d.id));
-    setSlots(prev => prev.map(slot => 
-        draftIds.has(slot.id) ? { ...slot, status: 'Booked' } : slot
-    ));
+    // [FIXED] Smart Status Check for UI
+    setSlots(prev => prev.map(slot => {
+        if (draftIds.has(slot.id)) {
+            const isStudentAttached = slot.studentId && slot.studentId !== 'Unknown' && slot.studentId !== '';
+            return { ...slot, status: isStudentAttached ? 'Booked' : 'Open' };
+        }
+        return slot;
+    }));
 
     // 3. YIELD TO BROWSER
     await new Promise(resolve => setTimeout(resolve, 10));
@@ -228,10 +233,15 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
 
       // 4. Only process the weekly drafts
       weeklyDrafts.forEach(draft => {
-        const slotRef = doc(db, "slots", draft.id);
-        batch.update(slotRef, { status: 'Booked' });
+        // [FIXED] Smart Status Check for Database
+        const isStudentAttached = draft.studentId && draft.studentId !== 'Unknown' && draft.studentId !== '';
+        const newStatus = isStudentAttached ? 'Booked' : 'Open';
 
-        if (draft.studentId && draft.studentId !== 'Unknown' && !studentsNotified.has(draft.studentId)) {
+        const slotRef = doc(db, "slots", draft.id);
+        batch.update(slotRef, { status: newStatus });
+
+        // [FIXED] Only send notifications if there is actually a student attached!
+        if (isStudentAttached && !studentsNotified.has(draft.studentId)) {
           const notifRef = doc(collection(db, 'notifications'));
           batch.set(notifRef, {
             userId: draft.studentId, type: 'system', title: 'New Lessons Scheduled',
@@ -448,6 +458,7 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
                     
                     <Route path="/diary" element={
                         <DiaryView 
+                          isDark={theme === 'dark'}  
                           slots={processedSlots} 
                           setEditingSlot={handleSetEditingSlot} 
                           lessonDuration={Number(profile?.lessonDuration) || 45} 
@@ -457,6 +468,27 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
                           onSlotMove={handleSlotMove}
                           showToast={showToast}
                           onDeleteSlot={(slot) => handleDeleteSlotClick(slot.id)}
+                          onBulkDelete={(slotIds: string[], typeLabel: string) => {
+                              setConfirmDialog({
+                                  isOpen: true,
+                                  title: `Clear ${typeLabel}`,
+                                  msg: `Are you sure you want to delete ${slotIds.length} slots? This action cannot be undone and will remove them from your calendar immediately.`,
+                                  action: async () => {
+                                      // [FIXED] Now using your centralized hook!
+                                      await bulkDeleteLessons(
+                                          slotIds,
+                                          (msg) => {
+                                              showToast(msg, 'success');
+                                              setConfirmDialog(null);
+                                          },
+                                          (errMsg) => {
+                                              showToast(errMsg, 'error');
+                                              setConfirmDialog(null);
+                                          }
+                                      );
+                                  }
+                              });
+                          }}
                         />
                     } />
                     

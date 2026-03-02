@@ -209,21 +209,38 @@ export function useLessonManager(user: any, slots: any[], profile: any, holidays
 
                 // If the current generation time hits your lunch window
                 if (slotStartMins < lunchEndMins && slotEndMins > lunchStartMins) {
-                    const newSlotRef = doc(collection(db, "slots"));
-                    batch.set(newSlotRef, {
-                        teacherId: user.uid,
-                        date: dateStr,
-                        time: config.lunchStart,
-                        endTime: config.lunchEnd,
-                        duration: lunchEndMins - lunchStartMins,
-                        status: 'Blocked',
-                        // "type" 'lunch' matches your BLOCK_REASONS constant for the Edit modal
-                        type: 'lunch', 
-                        blockReason: 'block_reason.lunch',
-                        createdAt: new Date().toISOString()
-                    });
                     
-                    currentMins = lunchEndMins; // Move the clock to after lunch
+                    // [FIXED] 1. Past Check: Ensure the lunch block itself isn't in the past
+                    const lunchDateTime = new Date(year, currentDate.getMonth(), currentDate.getDate(), lh, lm);
+                    
+                    // [FIXED] 2. Overlap Check: Ensure no existing slots overlap with this lunch window
+                    const daySlots = slots.filter(s => s.date === dateStr);
+                    const isOverlap = daySlots.some(s => {
+                        const [sh, sm] = (s.time || "00:00").split(':').map(Number);
+                        const sStart = sh * 60 + sm;
+                        const sDuration = s.duration || s.customDuration || (s.isDouble ? effectiveDuration * 2 : effectiveDuration);
+                        const sEnd = sStart + sDuration;
+                        return (lunchStartMins < sEnd && lunchEndMins > sStart);
+                    });
+
+                    // Only generate the lunch block if it's in the future AND there are no overlaps
+                    if (lunchDateTime >= now && !isOverlap) {
+                        const newSlotRef = doc(collection(db, "slots"));
+                        batch.set(newSlotRef, {
+                            teacherId: user.uid,
+                            date: dateStr,
+                            time: config.lunchStart,
+                            endTime: config.lunchEnd,
+                            duration: lunchEndMins - lunchStartMins,
+                            status: 'Blocked',
+                            type: 'lunch', 
+                            blockReason: 'block_reason.lunch',
+                            createdAt: new Date().toISOString()
+                        });
+                    }
+                    
+                    // ALWAYS push the clock forward past lunch, whether we generated the block or skipped it!
+                    currentMins = lunchEndMins; 
                     continue;
                 }
             }
@@ -322,6 +339,61 @@ export function useLessonManager(user: any, slots: any[], profile: any, holidays
       onSuccess(`Auto-generated ${count} draft lessons!`);
     } catch (error) {
       onError("Error generating schedule");
+    } finally {
+      setSaveLoading(false);
+    }
+  };
+
+  // --- Bulk Delete ---
+  const bulkDeleteLessons = async (
+    slotIds: string[], 
+    onSuccess: (msg: string) => void, 
+    onError: (msg: string) => void
+  ) => {
+    if (!user || slotIds.length === 0) return;
+    
+    setSaveLoading(true); // This will trigger your ConfirmModal spinner!
+    try {
+      const batch = writeBatch(db);
+      
+      slotIds.forEach(id => {
+        const slotRef = doc(db, "slots", id);
+        batch.delete(slotRef);
+      });
+      
+      await batch.commit();
+      onSuccess(`Successfully deleted ${slotIds.length} slots`);
+    } catch (error) {
+      console.error("Error in bulk delete:", error);
+      onError("Failed to clear slots. Please try again.");
+    } finally {
+      setSaveLoading(false);
+    }
+  };
+
+  // --- BULK UPDATE ACTION ---
+  const bulkUpdateLessons = async (
+    slotIds: string[], 
+    updates: Partial<LessonForm>, // Only contains the specific fields the user wants to change!
+    onSuccess: (msg: string) => void, 
+    onError: (msg: string) => void
+  ) => {
+    if (!user || slotIds.length === 0) return;
+    
+    setSaveLoading(true); 
+    try {
+      const batch = writeBatch(db);
+      
+      slotIds.forEach(id => {
+        const slotRef = doc(db, "slots", id);
+        batch.update(slotRef, updates);
+      });
+      
+      await batch.commit();
+      onSuccess(`Successfully updated ${slotIds.length} slots`);
+    } catch (error) {
+      console.error("Error in bulk update:", error);
+      onError("Failed to update slots.");
     } finally {
       setSaveLoading(false);
     }
@@ -437,6 +509,8 @@ export function useLessonManager(user: any, slots: any[], profile: any, holidays
     deleteLesson,
     autoScheduleWeek,
     copyWeekToNext,
+    bulkDeleteLessons,
+    bulkUpdateLessons,
     saveLoading, 
     validationMsg, 
     setValidationMsg 
