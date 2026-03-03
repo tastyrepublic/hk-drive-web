@@ -46,9 +46,9 @@ interface LessonForm {
   location: string;
   type: string;
   endTime?: string;
+  duration?: number;
   isDouble?: boolean;
   status?: 'Booked' | 'Blocked' | 'Open';
-  customDuration?: number;
   examCenter?: string; 
 }
 
@@ -169,19 +169,23 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
     if (slot.id) {
         setEditForm({
             id: slot.id, studentId: slot.studentId || '', date: slot.date, time: slot.time, location: slot.location || '', 
+            endTime: slot.endTime,
+            duration: slot.duration,
             type: slot.type || '', isDouble: slot.isDouble || false, status: slot.status || 'Booked',
-            customDuration: slot.customDuration || undefined, examCenter: slot.examCenter || '' 
+            examCenter: slot.examCenter || '' 
         });
     } else {
         if (!slot.date) {
             setEditForm({
                 date: '', time: '', location: '', type: preferredVehicle, studentId: '', isDouble: profile.defaultDoubleLesson ?? false,
-                status: slot.status || 'Booked', customDuration: undefined, examCenter: '' 
+                status: slot.status || 'Booked', examCenter: '',
+                endTime: undefined, duration: undefined 
             });
         } else {
             setEditForm(prev => ({
                 ...prev, id: undefined, studentId: '', date: slot.date, time: slot.time, location: '', type: preferredVehicle,
-                isDouble: profile.defaultDoubleLesson ?? false, status: slot.status || 'Booked', customDuration: undefined, examCenter: '' 
+                isDouble: profile.defaultDoubleLesson ?? false, status: slot.status || 'Booked', examCenter: '',
+                endTime: undefined, duration: undefined 
             }));
         }
     }
@@ -199,7 +203,9 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
       (editForm.type || '') !== (editingSlot.type || '') || 
       (editForm.status || 'Booked') !== (editingSlot.status || 'Booked') || 
       (!!editForm.isDouble) !== (!!editingSlot.isDouble) || 
-      (editForm.customDuration || 0) !== (editingSlot.customDuration || 0) ||
+      (editForm.endTime || '') !== (editingSlot.endTime || '') ||
+      (editForm.duration || 0) !== (editingSlot.duration || 0) ||
+      
       (editForm.examCenter || '') !== (editingSlot.examCenter || '') 
   );
 
@@ -346,6 +352,14 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
   const handleSlotMove = async (originalSlot: any, newDate: string, newTime: string, status: string) => {
     if (!user) return;
     
+    // --- NEW: CENTRALIZED SMART STATUS LOGIC ---
+    let safeStatus = status || originalSlot.status;
+    
+    // If the UI asks for 'Booked', but there is no student attached, strictly enforce 'Open'
+    if (safeStatus === 'Booked' && (!originalSlot.studentId || originalSlot.studentId === 'Unknown' || originalSlot.studentId === '')) {
+        safeStatus = 'Open';
+    }
+
     // Capture the previous state in case we need to revert
     const previousSlots = [...slots];
 
@@ -355,27 +369,64 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
     const totalMins = h * 60 + m + durationMins;
     const newEndTime = `${Math.floor(totalMins / 60).toString().padStart(2, '0')}:${(totalMins % 60).toString().padStart(2, '0')}`;
 
-    // Optimistically update the UI instantly
+    // Optimistically update the UI instantly (USING safeStatus)
     setSlots(prev => prev.map(slot => 
         slot.id === originalSlot.id 
-          ? { ...slot, date: newDate, time: newTime, endTime: newEndTime, status: status || originalSlot.status } 
+          ? { ...slot, date: newDate, time: newTime, endTime: newEndTime, status: safeStatus } 
           : slot
     ));
 
-    const updatedForm = { ...originalSlot, date: newDate, time: newTime, status: status || originalSlot.status };
+    const updatedForm = { 
+        ...originalSlot, 
+        date: newDate, 
+        time: newTime, 
+        endTime: newEndTime, 
+        duration: durationMins,
+        status: safeStatus // <-- USING safeStatus
+    };
     
     await saveLesson(
       updatedForm, originalSlot,
-      (msg) => {
-         // RESTORED TOAST NOTIFICATION
-         showToast(msg, 'success');
-      },
+      (msg) => showToast(msg, 'success'),
       (errorMsg) => {
-         // Revert the state on error
          setSlots(previousSlots);
          showToast(`Failed to move: ${errorMsg}`, 'error');
       }
     );
+  };
+  
+  // 4. DIRECT PASTE HANDLER
+  const handlePasteSlot = async (copiedSlot: any, targetDate: string, targetTime: string, sourceDuration?: number) => {
+      // 1. Calculate explicit duration (Prevents fallback to profile default)
+      const durationMins = sourceDuration || copiedSlot.duration || Number(profile?.lessonDuration) || 45;
+
+      // 2. Calculate the exact End Time
+      const [h, m] = targetTime.split(':').map(Number);
+      const totalMins = h * 60 + m + durationMins;
+      const newEndTime = `${Math.floor(totalMins / 60).toString().padStart(2, '0')}:${(totalMins % 60).toString().padStart(2, '0')}`;
+
+      // 3. STRICT REBUILD: We intentionally do NOT use ...copiedSlot here.
+      // Rebuilding it flatly ensures we don't accidentally mutate the original slot in memory!
+      const newSlotForm = {
+          date: targetDate,
+          time: targetTime,
+          endTime: newEndTime,
+          duration: durationMins,
+          studentId: copiedSlot.studentId || '',
+          location: copiedSlot.location || '',
+          type: copiedSlot.type || '',
+          isDouble: copiedSlot.isDouble || false,
+          status: copiedSlot.status, // Explicitly pass the status so Drafts stay Drafts
+          examCenter: copiedSlot.examCenter || ''
+      };
+
+      // 4. Save directly to the database!
+      await saveLesson(
+          newSlotForm, 
+          null, // null because it's a brand new slot
+          (msg) => showToast(msg, 'success'),
+          (err) => showToast(`Failed to paste: ${err}`, 'error')
+      );
   };
 
   return (
@@ -468,6 +519,7 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
                           onSlotMove={handleSlotMove}
                           showToast={showToast}
                           onDeleteSlot={(slot) => handleDeleteSlotClick(slot.id)}
+                          onPasteSlot={handlePasteSlot}
                           onBulkDelete={(slotIds: string[], typeLabel: string) => {
                               setConfirmDialog({
                                   isOpen: true,

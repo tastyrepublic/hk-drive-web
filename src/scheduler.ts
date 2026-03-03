@@ -18,6 +18,40 @@ export const fromMins = (totalMinutes: number) => {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 };
 
+// --- MASTER WEEK DATA HELPER ---
+export const getWeekData = (slots: any[], weekOffset: number = 0) => {
+  // 1. Generate the raw Date objects (Monday to Sunday)
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    const dayOfWeek = d.getDay();
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    d.setDate(d.getDate() + diffToMonday + i + (weekOffset * 7));
+    return d;
+  });
+
+  // 2. Format them to 'YYYY-MM-DD' strings for database matching
+  const weekDates = days.map(d => 
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  );
+
+  // 3. Filter and categorize the slots
+  const slotsThisWeek = slots.filter(s => weekDates.includes(s.date));
+  
+  return {
+    days,        // Array of Date objects (for rendering UI headers)
+    weekDates,   // Array of strings (for internal matching logic)
+    stats: {     // The categorized slots
+      all: slotsThisWeek,
+      hasSlots: slotsThisWeek.length > 0,
+      drafts: slotsThisWeek.filter(s => s.status === 'Draft'),
+      open: slotsThisWeek.filter(s => s.status === 'Open'),
+      blocked: slotsThisWeek.filter(s => s.status === 'Blocked'),
+      booked: slotsThisWeek.filter(s => s.status === 'Booked'),
+      unbooked: slotsThisWeek.filter(s => s.status !== 'Booked')
+    }
+  };
+};
+
 // --- SMART START TIME LOGIC ---
 export function getSmartStartTime(clickedHour: number, daySlots: any[], duration: number) {
     const hourStartMins = clickedHour * 60;
@@ -28,12 +62,8 @@ export function getSmartStartTime(clickedHour: number, daySlots: any[], duration
     const candidates = [hourStartMins];
     
     for (const slot of daySlots) {
-        const [sh, sm] = slot.time.split(':').map(Number);
-        const startMins = sh * 60 + sm;
-        const endMins = startMins + (slot.duration || duration);
+        const endMins = toMins(slot.endTime);
         
-        // If an existing slot ends exactly inside this hour block, 
-        // add its exact end time to our list of candidates to check!
         if (endMins >= hourStartMins && endMins < hourEndMins) {
             candidates.push(endMins);
         }
@@ -48,9 +78,8 @@ export function getSmartStartTime(clickedHour: number, daySlots: any[], duration
         let hasOverlap = false;
         
         for (const slot of daySlots) {
-            const [sh, sm] = slot.time.split(':').map(Number);
-            const slotStart = sh * 60 + sm;
-            const slotEnd = slotStart + (slot.duration || duration);
+            const slotStart = toMins(slot.time);
+            const slotEnd = toMins(slot.endTime);
             
             // Strict Overlap Check
             if (proposedStart < slotEnd && proposedEnd > slotStart) {

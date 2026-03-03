@@ -64,6 +64,23 @@ const ImageAttachment = ({ url, thumbnail, isSingle, onClick }: any) => {
     </div>
   );
 };
+
+// Helper to detect if a message should be rendered as "Big Emoji"
+const isBigEmoji = (text: string | null | undefined) => {
+  if (!text) return false;
+  
+  const trimmed = text.trim();
+  
+  // Robust regex for emojis including ZWJ sequences and skin tones
+  const emojiOnlyRegex = /^(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff]|[\u2700-\u27bf])+$/g;
+  
+  const isPureEmoji = emojiOnlyRegex.test(trimmed);
+  
+  // Count using Array.from to correctly identify 1 emoji even if it's multiple bytes
+  const count = Array.from(trimmed).length;
+  
+  return isPureEmoji && count <= 3;
+};
 // ------------------------------------------
 
 export function MessageBubble({ 
@@ -72,6 +89,9 @@ export function MessageBubble({
   isDeleting, onJumpToReply, isHighlighted, setEditingMessage 
 }: MessageBubbleProps) {
   const { t } = useTranslation();
+
+  const bigEmoji = isBigEmoji(msg.text);
+  const isNakedEmoji = bigEmoji && !msg.replyTo && (!msg.attachments || msg.attachments.length === 0);
   
   const isMine = msg.senderId === auth.currentUser?.uid;
   const isMenuOpen = activeMenuId === msg.id;
@@ -119,17 +139,19 @@ export function MessageBubble({
           <div ref={refs.setReference} className="relative group max-w-[80%]">
             
             <div className={`py-2 px-4 shadow-sm overflow-hidden transition-all duration-500
-              ${isMine 
-                ? `rounded-[12px] rounded-br-[2px] bg-primary text-white ${
-                    isHighlighted ? 'brightness-110 scale-[1.02] shadow-md ring-2 ring-white/50' : ''
-                  }` 
-                : `rounded-[12px] rounded-bl-[2px] border ${borderTheme} ${
-                    isHighlighted 
-                      ? (isDark 
-                          ? 'bg-primary/20 scale-[1.02] shadow-md ring-2 ring-primary/50' 
-                          : 'bg-primary/10 scale-[1.02] shadow-md ring-2 ring-primary/30') 
-                      : 'bg-white dark:bg-slate'
-                  }`
+              ${isNakedEmoji // <-- CHANGE THIS FROM bigEmoji TO isNakedEmoji
+                ? 'bg-transparent !shadow-none !px-0' // No bubble for naked big emojis
+                : isMine 
+                    ? `rounded-[12px] rounded-br-[2px] bg-primary text-white ${
+                        isHighlighted ? 'brightness-110 scale-[1.02] shadow-md ring-2 ring-white/50' : ''
+                      }` 
+                    : `rounded-[12px] rounded-bl-[2px] border ${borderTheme} ${
+                        isHighlighted 
+                          ? (isDark 
+                              ? 'bg-primary/20 scale-[1.02] shadow-md ring-2 ring-primary/50' 
+                              : 'bg-primary/10 scale-[1.02] shadow-md ring-2 ring-primary/30') 
+                          : 'bg-white dark:bg-slate'
+                      }`
               }`}
             >
               <AnimatePresence mode="popLayout">
@@ -181,13 +203,15 @@ export function MessageBubble({
 
                       {/* <-- ADD THIS BLOCK BACK: THE ACTUAL MESSAGE TEXT --> */}
                       {msg.text && (
-                        <span className="whitespace-pre-wrap break-words break-all mt-1">
-                          {msg.text}
-                          {msg.isEdited && (
-                            <span className="text-[10px] opacity-70 ml-2 italic">(edited)</span>
-                          )}
-                        </span>
-                      )}
+        <span className={`whitespace-pre-wrap break-words break-all mt-1 ${
+          bigEmoji ? 'text-5xl leading-tight' : 'text-sm'
+        }`}>
+          {msg.text}
+          {msg.isEdited && (
+            <span className="text-[10px] opacity-70 ml-2 italic">(edited)</span>
+          )}
+        </span>
+      )}
                       
                     </div>
                   </div>

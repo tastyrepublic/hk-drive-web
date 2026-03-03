@@ -11,17 +11,25 @@ interface LessonForm {
   location: string;
   type: string;
   endTime?: string;
+  duration?: number;
   isDouble?: boolean; 
   status?: 'Booked' | 'Blocked' | 'Open' | 'Draft'; 
-  customDuration?: number; 
   examCenter?: string; 
 }
+
+// Helper to calculate end time string for the database
+const calculateEndTimeString = (start: string, duration: number) => {
+  if (!start) return '';
+  const [h, m] = start.split(':').map(Number);
+  let totalMins = h * 60 + m + duration;
+  if (totalMins > 1425) totalMins = 1425; // Cap at 23:45
+  return `${String(Math.floor(totalMins / 60)).padStart(2, '0')}:${String(totalMins % 60).padStart(2, '0')}`;
+};
 
 export function useLessonManager(user: any, slots: any[], profile: any, holidays: Record<string, string> = {}) {
   const [saveLoading, setSaveLoading] = useState(false);
   const [validationMsg, setValidationMsg] = useState('');
 
-  // --- SAVE ACTION ---
   const saveLesson = async (
     form: LessonForm, 
     editingSlot: any, 
@@ -33,94 +41,110 @@ export function useLessonManager(user: any, slots: any[], profile: any, holidays
     setValidationMsg('');
 
     try {
-      // --- 1. CALCULATE "FROZEN" DURATION ---
-      let finalDuration = 0;
+      // [FIXED] Define isBlockMode so it can be used throughout the validation
       const isBlockMode = form.status === 'Blocked';
 
-      if (isBlockMode) {
-        finalDuration = Number(form.customDuration) || 60;
+      // [FIXED] Define h and m at the top so they are available for all validation checks
+      const [h, m] = (form.time || "00:00").split(':').map(Number);
+
+      // --- 1. CALCULATE DURATION ---
+      // [FIXED] Strictly type as number and restructure logic so TypeScript knows it is never undefined
+      let finalDuration: number;
+
+      if (form.duration) {
+        finalDuration = form.duration;
+      } else if (isBlockMode) {
+        finalDuration = editingSlot?.duration || 60;
       } else {
         const baseDuration = Number(profile?.lessonDuration) || 45; 
         finalDuration = form.isDouble ? baseDuration * 2 : baseDuration;
       }
 
       // --- 2. CALCULATE END TIME ---
-      const [h, m] = form.time.split(':').map(Number);
-      const totalMins = h * 60 + m + finalDuration;
-      // [NOTE] This `newEndTime` is critical for your "Happening Now" logic
-      const newEndTime = `${Math.floor(totalMins / 60).toString().padStart(2, '0')}:${(totalMins % 60).toString().padStart(2, '0')}`;
+      const newEndTime = isBlockMode 
+          ? (form.endTime || calculateEndTimeString(form.time, finalDuration))
+          : calculateEndTimeString(form.time, finalDuration);
 
       // --- 3. VALIDATION ---
+      const [y, month, d] = form.date.split('-').map(Number);
+      const targetDate = new Date(y, month - 1, d, h, m);
+      
+      const isNewOrMoved = !editingSlot?.id || editingSlot.date !== form.date || editingSlot.time !== form.time;
+
+      if (isNewOrMoved && targetDate < new Date()) {
+          onError("Cannot schedule in the past!");
+          setSaveLoading(false);
+          return;
+      }
+
       if (!isBlockMode) {
-          if (!form.location) {
-             onError("Please select a location!");
+          // Lesson Validation
+          if (!form.location || !form.type || !form.examCenter) {
+             onError("Please complete all required fields!");
              setSaveLoading(false);
              return;
           }
+
+          const check = checkSlotValidity(form.date, form.time, finalDuration, slots, editingSlot?.id || null, holidays);
+          if (!check.valid) {
+            onError(check.error || "Time slot overlap!");
+            setSaveLoading(false);
+            return; 
+          }
+      } else {
+          // Blocked Slot Validation (Ignores Restricted Zones)
           if (!form.type) {
-             onError("Please select a vehicle category!");
+             onError("Please select or type a reason!");
              setSaveLoading(false);
              return;
           }
-          if (!form.examCenter) {
-             onError("Please select an Exam Center!");
-             setSaveLoading(false);
-             return;
+
+          const startMins = h * 60 + m;
+          const endMins = startMins + finalDuration;
+
+          const isOverlapping = slots.some(s => {
+              if (s.date !== form.date || (editingSlot?.id && s.id === editingSlot.id)) return false;
+              
+              const [sh, sm] = (s.time || "00:00").split(':').map(Number);
+              const sStart = sh * 60 + sm;
+              const sEnd = sStart + (s.duration || (s.isDouble ? 90 : 45));
+              return startMins < sEnd && endMins > sStart;
+          });
+
+          if (isOverlapping) {
+              onError("Cannot place a block over an existing lesson!");
+              setSaveLoading(false);
+              return;
           }
       }
 
-      if (isBlockMode && !form.type) {
-         onError("Please select or type a reason!");
-         setSaveLoading(false);
-         return;
-      }
-
-      const check = checkSlotValidity(form.date, form.time, finalDuration, slots, editingSlot?.id || null, holidays);
-      if (!check.valid) {
-        onError(check.error || "Time slot overlap!");
-        setSaveLoading(false);
-        return; 
-      }
-
-      // --- 4. DETERMINE STATUS & BOOKED BY ---
+      // --- 4. DETERMINE STATUS ---
       let finalStatus = form.status || 'Open'; 
-      let bookedBy = null; 
+      let bookedBy = isBlockMode || form.status === 'Draft' || form.studentId ? 'teacher' : null;
 
       if (isBlockMode) {
           finalStatus = 'Blocked';
-          bookedBy = 'teacher';
-      } else if (form.status === 'Draft') {
-          // [FIX] Explicitly handle Drafts first so they don't get lost
-          finalStatus = 'Draft';
-          bookedBy = 'teacher';
-          
-          // Auto-convert to Booked if they open a Draft and assign a student
+      } else if (finalStatus !== 'Draft') {
+          // --- NEW: Strictly enforce Booked vs Open based on the student! ---
+          // If a student is removed, this forces it back to 'Open'.
           if (form.studentId && form.studentId !== 'Unknown' && form.studentId !== '') {
-              finalStatus = 'Booked'; 
+              finalStatus = 'Booked';
+          } else {
+              finalStatus = 'Open'; 
           }
-      } else if (form.studentId && form.studentId !== 'Unknown' && form.studentId !== '') {
-          finalStatus = 'Booked';
-          bookedBy = 'teacher'; 
-      } else {
-          finalStatus = 'Open'; 
-          bookedBy = null;
       }
 
       // --- 5. PREPARE DATA ---
       const lessonData = {
         date: form.date,
         time: form.time,
-        endTime: newEndTime, // Saved for exact duration calc
+        endTime: newEndTime,
         location: form.location || '', 
         studentId: form.studentId || '', 
         isDouble: !!form.isDouble,
-        
         type: form.type, 
-        
         status: finalStatus,
-        bookedBy: bookedBy, // [NEW] Save source
-        
-        customDuration: form.customDuration || null,
+        bookedBy: bookedBy,
         duration: finalDuration, 
         examCenter: form.examCenter || '' 
       };
@@ -435,20 +459,46 @@ export function useLessonManager(user: any, slots: any[], profile: any, holidays
          const effectiveDuration = slot.duration || (slot.isDouble ? Number(profile?.lessonDuration) * 2 : Number(profile?.lessonDuration)) || 45;
 
          // 3. Ask the Gatekeeper if this time is legal on the NEW date!
-         const check = checkSlotValidity(
-             newDateStr, 
-             slot.time, 
-             effectiveDuration, 
-             slots, 
-             undefined, 
-             holidays
-         );
+         let isValid = true;
+         let errorMsg = '';
+
+         if (slot.status === 'Blocked') {
+             // --- BLOCKED SLOTS: Ignore Restricted Zones, check only for overlaps ---
+             const [h, m] = slot.time.split(':').map(Number);
+             const startMins = h * 60 + m;
+             const endMins = startMins + effectiveDuration;
+             
+             const isOverlapping = slots.some(s => {
+                 if (s.date !== newDateStr) return false;
+                 const [sh, sm] = (s.time || "00:00").split(':').map(Number);
+                 const sStart = sh * 60 + sm;
+                 const sEnd = sStart + (s.duration || (s.isDouble ? 90 : 45));
+                 return startMins < sEnd && endMins > sStart;
+             });
+
+             if (isOverlapping) {
+                 isValid = false;
+                 errorMsg = 'Collision';
+             }
+         } else {
+             // --- STANDARD LESSONS: Use the strict Gatekeeper ---
+             const check = checkSlotValidity(
+                 newDateStr, 
+                 slot.time, 
+                 effectiveDuration, 
+                 slots, 
+                 undefined, 
+                 holidays
+             );
+             isValid = check.valid;
+             errorMsg = check.error || '';
+         }
 
          // 4. Only copy it if it's strictly legal
-         if (check.valid) {
+         if (isValid) {
              const newSlotRef = doc(collection(db, "slots"));
              
-             // [FIREBASE FIX] Create a clean copy and explicitly delete the ID
+             // Create a clean copy and explicitly delete the ID
              const cleanSlot = { ...slot };
              delete cleanSlot.id; 
 
@@ -464,8 +514,7 @@ export function useLessonManager(user: any, slots: any[], profile: any, holidays
              });
              copiedCount++;
          } else {
-             // [NEW] Categorize the error message
-             const errorMsg = check.error || '';
+             // Categorize the error message
              if (errorMsg.includes('Collision')) {
                  skipReasons.collisions++;
              } else if (errorMsg.includes('Restricted') || errorMsg.includes('Too Early') || errorMsg.includes('Too Late')) {
