@@ -24,6 +24,7 @@ import { ConfirmModal } from '../Modals/ConfirmModal';
 import { NotificationsMenu } from '../Notifications/NotificationsMenu';
 import { MessagesView } from '../Messages/MessagesView';
 import { AutoFillModal } from '../Modals/AutoFillModal';
+import { BulkEditModal } from '../Modals/BulkEditModal';
 
 // Hooks
 import { useLessonManager } from '../../hooks/useLessonManager';
@@ -73,6 +74,9 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false); 
   const notificationButtonRef = useRef<HTMLButtonElement>(null); 
 
+  const [bulkEditIds, setBulkEditIds] = useState<string[]>([]);
+  const [clearSelectionCallback, setClearSelectionCallback] = useState<(() => void) | null>(null);
+
   const { unreadCount: unreadNotifs } = useNotifications(); 
   const { unreadCount: unreadMessages } = useMessages(); 
 
@@ -90,12 +94,12 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
   });
 
   const [saveProfileLoading, setSaveProfileLoading] = useState(false);
-  const [autoFillDate, setAutoFillDate] = useState<Date | null>(null);
+  const [autoFillConfig, setAutoFillConfig] = useState<{date: Date, singleDay: boolean} | null>(null);
 
   const holidays = useHolidays();
   
   const { 
-    saveLesson, deleteLesson, autoScheduleWeek, copyWeekToNext, bulkDeleteLessons, saveLoading: saveSlotLoading, validationMsg, setValidationMsg 
+    saveLesson, deleteLesson, autoScheduleWeek, copyWeekToNext, bulkDeleteLessons, bulkUpdateLessons, saveLoading: saveSlotLoading, validationMsg, setValidationMsg 
   } = useLessonManager(user, slots, profile, holidays);
 
   const {
@@ -514,11 +518,15 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
                           setEditingSlot={handleSetEditingSlot} 
                           lessonDuration={Number(profile?.lessonDuration) || 45} 
                           onPublishDrafts={handlePublishDrafts} 
-                          onOpenAutoFill={(date) => setAutoFillDate(date)} 
+                          onOpenAutoFill={(date, singleDay) => setAutoFillConfig({ date, singleDay: !!singleDay })} 
                           onCopyWeek={copyWeekToNext}
                           onSlotMove={handleSlotMove}
                           showToast={showToast}
                           onDeleteSlot={(slot) => handleDeleteSlotClick(slot.id)}
+                          onBulkEdit={(ids, clearFn) => {
+                              setBulkEditIds(ids);
+                              setClearSelectionCallback(() => clearFn); // <--- SAVE THE CALLBACK
+                          }}
                           onPasteSlot={handlePasteSlot}
                           onBulkDelete={(slotIds: string[], typeLabel: string) => {
                               setConfirmDialog({
@@ -582,14 +590,47 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
         onUnlink={handleUnlinkStudent} students={students} showToast={showToast} teacherVehicles={profile?.vehicleTypes || []}
       />
 
-      <AutoFillModal
-        isOpen={!!autoFillDate} onClose={() => setAutoFillDate(null)} isGenerating={saveSlotLoading}
-        teacherVehicles={profile?.vehicleTypes || []} defaultDuration={Number(profile?.lessonDuration) || 45} defaultDouble={!!profile?.defaultDoubleLesson}          
+      <BulkEditModal
+        isOpen={bulkEditIds.length > 0}
+        onClose={() => setBulkEditIds([])}
+        selectedIds={bulkEditIds}
+        slots={slots} 
+        isSaving={saveSlotLoading}
+        teacherVehicles={profile?.vehicleTypes || []}
         teacherExamCenters={profile?.defaultExamCenters || []}
-        weekStartDate={autoFillDate || new Date()}
+        onApply={async (updates: any) => { 
+            await bulkUpdateLessons(
+                bulkEditIds, 
+                updates, 
+                (msg: string) => {         
+                    showToast(msg, 'success'); 
+                    setBulkEditIds([]); 
+                    
+                    // --- NEW: FIRE THE CLEANUP CALLBACK ---
+                    if (clearSelectionCallback) {
+                        clearSelectionCallback();
+                        setClearSelectionCallback(null);
+                    }
+                }, 
+                (err: string) => showToast(err, 'error') 
+            );
+        }}
+      />
+
+      <AutoFillModal
+        isOpen={!!autoFillConfig} 
+        onClose={() => setAutoFillConfig(null)} 
+        isGenerating={saveSlotLoading}
+        teacherVehicles={profile?.vehicleTypes || []} 
+        defaultDuration={Number(profile?.lessonDuration) || 45} 
+        defaultDouble={!!profile?.defaultDoubleLesson}          
+        teacherExamCenters={profile?.defaultExamCenters || []}
+        // --- UPDATED THESE LINES ---
+        weekStartDate={autoFillConfig?.date || new Date()}
+        singleDayMode={autoFillConfig?.singleDay}
         onGenerate={async (config) => {
-            if (autoFillDate) {
-                await autoScheduleWeek(autoFillDate, config, (msg) => { showToast(msg, 'success'); setAutoFillDate(null); }, (msg) => showToast(msg, 'error'));
+            if (autoFillConfig?.date) {
+                await autoScheduleWeek(autoFillConfig.date, config, (msg) => { showToast(msg, 'success'); setAutoFillConfig(null); }, (msg) => showToast(msg, 'error'));
             }
         }}
       />

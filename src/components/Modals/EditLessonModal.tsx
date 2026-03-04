@@ -114,6 +114,16 @@ export function EditLessonModal({
         let initialCenter = editingSlot?.examCenter || '';
         let initialLocation = editingSlot?.location || '';
         
+        // --- NEW: Auto-select first exam center and pickup for NEW lessons ---
+        if (!editingSlot?.id && teacherExamCenters?.length > 0) {
+            if (!initialCenter) initialCenter = teacherExamCenters[0];
+            if (!initialLocation && initialCenter) {
+                const allowedIds = EXAM_CENTER_PICKUPS[initialCenter] || [];
+                const firstLoc = LESSON_LOCATIONS.find(loc => allowedIds.includes(loc.id));
+                if (firstLoc) initialLocation = firstLoc.label;
+            }
+        }
+
         const initialLessonState = (editingSlot?.status !== 'Blocked') 
             ? { ...editingSlot, isDouble: editingSlot.isDouble ?? defaultDoubleLesson, examCenter: initialCenter, location: initialLocation } 
             : {
@@ -140,7 +150,7 @@ export function EditLessonModal({
         setLessonSnapshot(initialLessonState);
         setBlockSnapshot(initialBlockState);
     }
-  }, [isOpen, editingSlot, primaryVehicle, vehicleTypes, defaultDoubleLesson]);
+  }, [isOpen, editingSlot, primaryVehicle, vehicleTypes, defaultDoubleLesson, teacherExamCenters]); // <-- Added teacherExamCenters to dependencies
 
   useEffect(() => {
     if (!isOpen) return;
@@ -148,11 +158,36 @@ export function EditLessonModal({
     else setLessonSnapshot(editForm);
   }, [editForm, isOpen]);
 
+  // --- UPDATED: Live form auto-fill effect ---
   useEffect(() => {
-    if (isOpen && editForm.status !== 'Blocked' && editForm.type !== effectiveType && effectiveType) {
-        setEditForm((prev: any) => ({ ...prev, type: effectiveType }));
+    if (isOpen && editForm.status !== 'Blocked') {
+        setEditForm((prev: any) => {
+            let updates: any = {};
+            let modified = false;
+
+            // Auto-select valid vehicle type
+            if (prev.type !== effectiveType && effectiveType) {
+                updates.type = effectiveType;
+                modified = true;
+            }
+
+            // Auto-select first exam center and location for NEW lessons
+            if (!prev.id && !prev.examCenter && teacherExamCenters?.length > 0) {
+                updates.examCenter = teacherExamCenters[0];
+                modified = true;
+                
+                if (!prev.location) {
+                    const allowedIds = EXAM_CENTER_PICKUPS[updates.examCenter] || [];
+                    const firstLoc = LESSON_LOCATIONS.find(loc => allowedIds.includes(loc.id));
+                    if (firstLoc) updates.location = firstLoc.label;
+                }
+            }
+
+            // Only trigger a state update if we actually changed something
+            return modified ? { ...prev, ...updates } : prev;
+        });
     }
-  }, [isOpen, editForm.status, effectiveType]);
+  }, [isOpen, editForm.status, effectiveType, teacherExamCenters, setEditForm]);
 
   // --- [NEW] OPTION 1: HISTORICAL DURATION LOGIC ---
   const isStandardLessonEdit = isEditing && editingSlot?.status !== 'Blocked';
@@ -224,6 +259,16 @@ export function EditLessonModal({
   const availableLocations = allowedLocationIds ? LESSON_LOCATIONS.filter(loc => allowedLocationIds.includes(loc.id)) : LESSON_LOCATIONS;
   const filteredLocations = availableLocations.filter(loc => loc.label.toLowerCase().includes((editForm.location || '').toLowerCase()));
 
+  // --- NEW: DYNAMIC THEME COLORS ---
+  const isDraft = editForm.status === 'Draft';
+  const primaryBg = isDraft ? 'bg-purple-500' : 'bg-orange';
+  const primaryText = isDraft ? 'text-purple-400' : 'text-orange';
+  const primaryBorder = isDraft ? 'border-purple-500' : 'border-orange';
+  const primaryHover = isDraft ? 'hover:bg-purple-600' : 'hover:brightness-110';
+  const primaryLightBg = isDraft ? 'bg-purple-500/10' : 'bg-orange/10';
+  const focusBorder = isDraft ? 'focus:border-purple-500' : 'focus:border-orange';
+  const themeVariant = isDraft ? 'purple' : (isBlockMode ? 'blocked' : 'orange');
+
   return (
     <Modal
       isOpen={isOpen}
@@ -247,7 +292,7 @@ export function EditLessonModal({
             onClick={onSave} 
             disabled={saveSlotLoading || !isSlotModified || !isFormValid} 
             className={`h-[48px] min-w-[140px] flex items-center justify-center gap-2 px-6 rounded-xl font-bold text-white transition-all active:scale-[0.98] ${
-                isBlockMode ? 'bg-red-500 hover:bg-red-600' : 'bg-orange hover:brightness-110'
+                isBlockMode ? 'bg-red-500 hover:bg-red-600' : `${primaryBg} ${primaryHover}`
             } disabled:opacity-50 disabled:cursor-default disabled:active:scale-100 ml-auto`}
           >
             {saveSlotLoading ? <Loader2 className="animate-spin" size={20} /> : <span>{isEditing ? 'Save Changes' : (isBlockMode ? 'Add Block' : 'Create Lesson')}</span>}
@@ -275,11 +320,25 @@ export function EditLessonModal({
            <button 
              onClick={() => {
                 if (lessonSnapshot) {
-                    const safeStatus = lessonSnapshot.studentId ? 'Booked' : 'Open';
-                    setEditForm({ ...lessonSnapshot, status: safeStatus, type: lessonSnapshot.type || primaryVehicle, date: editForm.date, time: editForm.time });
+                    // --- NEW: Smart status recovery ---
+                    // If it started as a Draft, keep it a Draft!
+                    let safeStatus = lessonSnapshot.status;
+                    
+                    // If it wasn't a draft, then fallback to the standard Booked vs Open logic
+                    if (safeStatus !== 'Draft') {
+                        safeStatus = lessonSnapshot.studentId ? 'Booked' : 'Open';
+                    }
+
+                    setEditForm({ 
+                        ...lessonSnapshot, 
+                        status: safeStatus, 
+                        type: lessonSnapshot.type || primaryVehicle, 
+                        date: editForm.date, 
+                        time: editForm.time 
+                    });
                 }
              }}
-             className={`flex-1 py-2 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-2 ${!isBlockMode ? 'bg-orange text-white shadow-md' : 'text-textGrey hover:text-white'}`}
+             className={`flex-1 py-2 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-2 ${!isBlockMode ? `${primaryBg} text-white shadow-md` : 'text-textGrey hover:text-white'}`}
            >
              <Car size={14} /> Lesson
            </button>
@@ -305,7 +364,7 @@ export function EditLessonModal({
                       return (
                         <button key={vId} onClick={() => handleChange('type', vId)}
                           className={`px-3 py-1.5 rounded-md text-xs font-bold border transition-all ${
-                             effectiveType === vId ? 'bg-orange text-white border-orange' : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'
+                             effectiveType === vId ? `${primaryBg} text-white ${primaryBorder}` : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'
                           }`}
                         >
                           {t(labelKey).replace('Private Car', 'Car').replace('Light Goods', 'Van')}
@@ -324,7 +383,7 @@ export function EditLessonModal({
                 label="Date" 
                 value={editForm.date || ''}
                 minDate={todayStr} 
-                variant={isBlockMode ? 'blocked' : 'orange'} 
+                variant={themeVariant} // <--- UPDATED
                 onChange={(newDate) => handleChange('date', newDate)} 
               />
             </div>
@@ -334,7 +393,7 @@ export function EditLessonModal({
                 label={isBlockMode ? t("Start Time") : t("Time")} 
                 value={editForm.time || ''} 
                 align={isBlockMode ? "left" : "right"} 
-                variant={isBlockMode ? 'blocked' : 'orange'} 
+                variant={themeVariant} // <--- UPDATED
                 minTime={dynamicMinTime} 
                 onChange={(newTime) => handleChange('time', newTime)} 
               />
@@ -347,7 +406,7 @@ export function EditLessonModal({
                         label={t("End Time")} 
                         value={editForm.endTime || ''} 
                         align="right" 
-                        variant="blocked"
+                        variant="blocked" // <--- Blocks always stay red, leave this one!
                         minTime={editForm.time} 
                         onChange={(newEndTime) => handleChange('endTime', newEndTime)} 
                     />
@@ -451,10 +510,10 @@ export function EditLessonModal({
                 <span className="text-xs text-textGrey">
                     <span className="text-white font-medium">{currentDuration} min</span> 
                     <span className="mx-1.5 text-gray-600">•</span>
-                    Ends at <span className="text-orange font-bold">{currentEndTime}</span>
+                    Ends at <span className={`${primaryText} font-bold`}>{currentEndTime}</span>
                 </span>
             </div>
-            <button type="button" className={`relative w-12 h-7 rounded-full transition-colors duration-200 ease-in-out focus:outline-none ${editForm.isDouble ? 'bg-orange' : 'bg-gray-700'}`}>
+            <button type="button" className={`relative w-12 h-7 rounded-full transition-colors duration-200 ease-in-out focus:outline-none ${editForm.isDouble ? primaryBg : 'bg-gray-700'}`}>
                 <span className={`absolute left-1 top-1 bg-white w-5 h-5 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${editForm.isDouble ? 'translate-x-5' : 'translate-x-0'}`} />
             </button>
         </div>
@@ -467,10 +526,10 @@ export function EditLessonModal({
                         type="text" placeholder="Search Student..." value={studentQuery}
                         onChange={(e) => { setStudentQuery(e.target.value); setShowStudentDropdown(true); handleChange('studentId', ''); }}
                         onFocus={() => setShowStudentDropdown(true)} onBlur={() => setTimeout(() => setShowStudentDropdown(false), 200)}
-                        className="w-full pl-10 p-3 bg-midnight border border-gray-700 rounded-lg text-white focus:border-orange outline-none transition-colors"
+                        className={`w-full pl-10 p-3 bg-midnight border border-gray-700 rounded-lg text-white ${focusBorder} outline-none transition-colors`}
                       />
                       {showStudentDropdown && (
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-slate border border-gray-700 rounded-lg shadow-xl overflow-hidden">
+                        <div className="absolute bottom-full left-0 right-0 mb-1 bg-slate border border-gray-700 rounded-lg shadow-xl overflow-hidden z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
                           <div className="max-h-48 overflow-y-auto custom-scrollbar">
                             {filteredStudents.length > 0 ? (
                               filteredStudents.map(student => (
@@ -490,7 +549,7 @@ export function EditLessonModal({
                 
                 <div className={`space-y-2 relative animate-in fade-in slide-in-from-top-1 duration-200 ${showCenterDropdown ? 'z-[60]' : 'z-20'}`} ref={centerDropdownRef}>
                    <label className="text-[10px] text-textGrey uppercase font-black px-1">Exam Center (Required)</label>
-                   <div onClick={() => setShowCenterDropdown(!showCenterDropdown)} className={`w-full pl-4 pr-3 p-3 bg-midnight border rounded-lg text-white cursor-pointer flex items-center justify-between transition-colors ${showCenterDropdown ? 'border-orange' : 'border-gray-700 hover:border-gray-500'}`}>
+                   <div onClick={() => setShowCenterDropdown(!showCenterDropdown)} className={`w-full pl-4 pr-3 p-3 bg-midnight border rounded-lg text-white cursor-pointer flex items-center justify-between transition-colors ${showCenterDropdown ? primaryBorder : 'border-gray-700 hover:border-gray-500'}`}>
                         <span className={`text-sm font-bold truncate mr-2 ${!editForm.examCenter ? 'text-gray-500' : ''}`}>
                             {editForm.examCenter ? t(getExamCenterLabel(editForm.examCenter)) : t('Select Exam Center...')}
                         </span>
@@ -508,7 +567,7 @@ export function EditLessonModal({
                                                 const currentLabel = editForm.location;
                                                 if (currentLabel && !LESSON_LOCATIONS.some(l => allowed.includes(l.id) && l.label === currentLabel)) { handleChange('location', ''); }
                                             }}
-                                            className={`p-3 text-sm font-bold cursor-pointer transition-colors border-b border-gray-800 last:border-0 flex items-center justify-between ${editForm.examCenter === centerId ? 'bg-orange/10 text-orange' : 'text-white hover:bg-midnight'}`}
+                                            className={`p-3 text-sm font-bold cursor-pointer transition-colors border-b border-gray-800 last:border-0 flex items-center justify-between ${editForm.examCenter === centerId ? `${primaryLightBg} ${primaryText}` : 'text-white hover:bg-midnight'}`}
                                         >
                                             <span>{t(getExamCenterLabel(centerId))}</span>
                                             {editForm.examCenter === centerId && <Check size={16} />}
@@ -526,7 +585,7 @@ export function EditLessonModal({
                   <div className="space-y-1">
                     <label className="text-[10px] text-textGrey uppercase font-black px-1 flex justify-between">
                         <span>Pickup Location</span>
-                        {editForm.examCenter && <span className="text-orange">{availableLocations.length} options</span>}
+                        {editForm.examCenter && <span className={`${primaryText}`}>{availableLocations.length} options</span>}
                     </label>
                     <div className="relative">
                       <MapPin className="absolute left-3 top-3 text-textGrey z-10" size={18} />
@@ -536,7 +595,7 @@ export function EditLessonModal({
                         value={t(editForm.location)} 
                         onChange={e => { handleChange('location', e.target.value); setShowLocationDropdown(true); }}
                         onFocus={() => setShowLocationDropdown(true)} onBlur={() => setTimeout(() => setShowLocationDropdown(false), 200)}
-                        className={`w-full pl-10 p-3 bg-midnight border rounded-lg text-white focus:border-orange outline-none transition-colors ${!editForm.examCenter ? 'border-gray-800 opacity-50 cursor-not-allowed' : 'border-gray-700'}`}
+                        className={`w-full pl-10 p-3 bg-midnight border rounded-lg text-white ${focusBorder} outline-none transition-colors ${!editForm.examCenter ? 'border-gray-800 opacity-50 cursor-not-allowed' : 'border-gray-700'}`}
                       />
                       {showLocationDropdown && filteredLocations.length > 0 && editForm.examCenter && (
                         <div className="absolute top-full left-0 right-0 mt-1 bg-slate border border-gray-700 rounded-lg shadow-xl overflow-hidden">
@@ -556,7 +615,7 @@ export function EditLessonModal({
                       <div className="flex flex-wrap gap-2">
                         {availableLocations.map(loc => (
                           <button key={loc.id} type="button" onClick={() => handleChange('location', loc.label)}
-                            className={`px-3 py-1.5 rounded-md text-xs font-bold border transition-all ${editForm.location === loc.label ? 'bg-orange text-white border-orange' : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'}`}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold border transition-all ${editForm.location === loc.label ? `${primaryBg} text-white ${primaryBorder}` : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'}`}
                           >
                             {t(loc.label)}
                           </button>

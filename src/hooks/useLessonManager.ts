@@ -398,7 +398,7 @@ export function useLessonManager(user: any, slots: any[], profile: any, holidays
   // --- BULK UPDATE ACTION ---
   const bulkUpdateLessons = async (
     slotIds: string[], 
-    updates: Partial<LessonForm>, // Only contains the specific fields the user wants to change!
+    updates: Partial<LessonForm>, 
     onSuccess: (msg: string) => void, 
     onError: (msg: string) => void
   ) => {
@@ -407,14 +407,44 @@ export function useLessonManager(user: any, slots: any[], profile: any, holidays
     setSaveLoading(true); 
     try {
       const batch = writeBatch(db);
+      let updatedCount = 0;
       
       slotIds.forEach(id => {
         const slotRef = doc(db, "slots", id);
-        batch.update(slotRef, updates);
+        const existingSlot = slots.find((s: any) => s.id === id);
+        let safeUpdates = { ...updates };
+
+        if (!existingSlot) return;
+
+        // --- 1. SMART BLOCKED SLOT LOGIC ---
+        if (existingSlot.status === 'Blocked') {
+            // If it's a block, ONLY allow the 'type' (reason) to be updated. Strip everything else!
+            safeUpdates = {};
+            if (updates.type) safeUpdates.type = updates.type;
+            
+            // If there's no valid update for the block, skip it
+            if (Object.keys(safeUpdates).length === 0) return;
+        } 
+        // --- 2. SMART LESSON LOGIC ---
+        else {
+            if (safeUpdates.status === 'Open' || safeUpdates.status === 'Draft') {
+                const hasStudent = existingSlot.studentId && existingSlot.studentId !== 'Unknown' && existingSlot.studentId !== '';
+                if (hasStudent) {
+                    delete safeUpdates.status; // Protect the booking
+                }
+            }
+        }
+
+        // --- 3. APPLY UPDATES ---
+        if (Object.keys(safeUpdates).length > 0) {
+            batch.update(slotRef, safeUpdates);
+            updatedCount++;
+        }
       });
       
       await batch.commit();
-      onSuccess(`Successfully updated ${slotIds.length} slots`);
+      onSuccess(`Successfully updated ${updatedCount} slots`);
+      
     } catch (error) {
       console.error("Error in bulk update:", error);
       onError("Failed to update slots.");

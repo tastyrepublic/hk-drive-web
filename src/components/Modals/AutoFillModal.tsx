@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Modal } from './Modal';
-import { Loader2, Calendar, ChevronDown, Check } from 'lucide-react';
+import { Loader2, Calendar, ChevronDown, Check, MapPin } from 'lucide-react';
 import { TimeSelect } from '../Shared/TimeSelect';
 import { useTranslation } from 'react-i18next';
 
@@ -18,9 +18,10 @@ interface Props {
   defaultDouble: boolean;
   teacherExamCenters: string[];
   weekStartDate: Date;
+  singleDayMode?: boolean;
 }
 
-export function AutoFillModal({ isOpen, onClose, onGenerate, isGenerating, teacherVehicles, defaultDuration, defaultDouble, teacherExamCenters, weekStartDate }: Props) {
+export function AutoFillModal({ isOpen, onClose, onGenerate, isGenerating, teacherVehicles, defaultDuration, defaultDouble, teacherExamCenters, weekStartDate, singleDayMode }: Props) {
   const { t } = useTranslation();
 
   // [NEW] Calculate which days are in the past efficiently
@@ -67,27 +68,39 @@ export function AutoFillModal({ isOpen, onClose, onGenerate, isGenerating, teach
         const allowedIds = defaultCenter ? (EXAM_CENTER_PICKUPS as any)[defaultCenter] || [] : [];
         const defaultLocation = allowedIds.length > 0 ? LESSON_LOCATIONS.find(l => allowedIds.includes(l.id))?.label || '' : '';
 
-        // [NEW] Strip out past days from the default Mon-Fri selection
-        const defaultWorkingDays = [1, 2, 3, 4, 5].filter(day => !disabledDays.includes(day));
+        // --- NEW: Smart Working Days Default ---
+        let defaultWorkingDays: number[] = [];
+        if (singleDayMode && weekStartDate) {
+            defaultWorkingDays = [weekStartDate.getDay()];
+        } else {
+            defaultWorkingDays = [1, 2, 3, 4, 5].filter(day => !disabledDays.includes(day));
+        }
 
         setConfig(prev => ({
             ...prev,
-            workingDays: defaultWorkingDays, // [FIXED] Smart default
+            workingDays: defaultWorkingDays, 
             lessonDuration: Number(defaultDuration) || 45,
             isDouble: !!defaultDouble,
             vehicleType: teacherVehicles && teacherVehicles.length > 0 ? teacherVehicles[0] : '1a',
             examCenter: defaultCenter,
             location: defaultLocation 
         }));
+    } else {
+        // --- NEW: Reset all dropdowns when the modal closes ---
+        setShowCenterDropdown(false);
+        setShowVehicleDropdown(false);
+        setShowLocationDropdown(false); // (Make sure you added this state in the previous step!)
     }
-  }, [isOpen, defaultDuration, defaultDouble, teacherVehicles, teacherExamCenters]);
+  }, [isOpen, defaultDuration, defaultDouble, teacherVehicles, teacherExamCenters, singleDayMode, weekStartDate, disabledDays]);
 
   const [showCenterDropdown, setShowCenterDropdown] = useState(false);
   const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
+  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const allowedLocationIds = config.examCenter ? EXAM_CENTER_PICKUPS[config.examCenter] : null;
   const availableLocations = allowedLocationIds
     ? LESSON_LOCATIONS.filter(loc => allowedLocationIds.includes(loc.id))
     : LESSON_LOCATIONS;
+  const filteredLocations = availableLocations.filter(loc => loc.label.toLowerCase().includes((config.location || '').toLowerCase()));
 
   const days = [
     { id: 1, label: 'Mon' }, { id: 2, label: 'Tue' }, { id: 3, label: 'Wed' },
@@ -102,38 +115,50 @@ export function AutoFillModal({ isOpen, onClose, onGenerate, isGenerating, teach
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Auto-Fill Settings" maxWidth="max-w-md">
+    <Modal isOpen={isOpen} onClose={onClose} title={singleDayMode ? "Auto-Fill Day" : "Auto-Fill Settings"} maxWidth="max-w-md">
       <div className="space-y-4">
-        <p className="text-xs text-textGrey">Generate a week of purple drafts. You can review and edit them before publishing to your students.</p>
+        <p className="text-xs text-textGrey">
+            Generate a {singleDayMode ? 'day' : 'week'} of purple drafts. You can review and edit them before publishing to your students.
+        </p>
 
-        {/* Working Days */}
-        <div className="space-y-1.5">
-          <label className="text-[10px] text-textGrey uppercase font-black">Working Days</label>
-          {/* [CHANGED] Swapped flex for grid-cols-7 so all 7 days share the exact same width */}
-          <div className="grid grid-cols-7 gap-1.5">
-            {days.map(d => {
-              const isPastDay = disabledDays.includes(d.id); // [NEW] Simple, clean check
+        {/* Working Days or Single Day Display */}
+        {!singleDayMode ? (
+            <div className="space-y-1.5">
+              <label className="text-[10px] text-textGrey uppercase font-black">Working Days</label>
+              <div className="grid grid-cols-7 gap-1.5">
+                {days.map(d => {
+                  const isPastDay = disabledDays.includes(d.id); 
 
-              return (
-                <button
-                  key={d.id} 
-                  disabled={isPastDay} // [NEW] Disable native click
-                  onClick={() => toggleDay(d.id)}
-                  className={`w-full py-1.5 rounded text-[11px] sm:text-xs font-bold border transition-colors text-center ${
-                    config.workingDays.includes(d.id) 
-                      ? 'bg-purple-500 text-white border-purple-500 shadow-sm' 
-                      : isPastDay
-                          ? 'bg-transparent text-gray-700 border-gray-800 opacity-30 cursor-not-allowed' // [NEW] Faded styling
-                          : 'bg-transparent text-textGrey border-gray-700 hover:border-gray-500'
-                  }`}
-                >
-                  {t(d.label)}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
+                  return (
+                    <button
+                      key={d.id} 
+                      disabled={isPastDay}
+                      onClick={() => toggleDay(d.id)}
+                      className={`w-full py-1.5 rounded text-[11px] sm:text-xs font-bold border transition-colors text-center ${
+                        config.workingDays.includes(d.id) 
+                          ? 'bg-purple-500 text-white border-purple-500 shadow-sm' 
+                          : isPastDay
+                              ? 'bg-transparent text-gray-700 border-gray-800 opacity-30 cursor-not-allowed' 
+                              : 'bg-transparent text-textGrey border-gray-700 hover:border-gray-500'
+                      }`}
+                    >
+                      {t(d.label)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+        ) : (
+            <div className="space-y-1.5 animate-in fade-in zoom-in-95 duration-200">
+                <label className="text-[10px] text-textGrey uppercase font-black">Selected Day</label>
+                <div className="w-full py-2.5 bg-purple-500/10 border border-purple-500/30 rounded-lg text-center flex items-center justify-center gap-2">
+                    <Calendar size={16} className="text-purple-400" />
+                    <span className="text-sm font-bold text-purple-400">
+                        {weekStartDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+                    </span>
+                </div>
+            </div>
+        )}
         {/* --- DYNAMIC TIME WHEELS --- */}
         <div className="grid grid-cols-2 gap-4">
     <TimeSelect 
@@ -281,25 +306,45 @@ export function AutoFillModal({ isOpen, onClose, onGenerate, isGenerating, teach
         </div>
 
         {/* Pickup Location Selector */}
-        <div className="space-y-2 relative z-30">
-            <label className="text-[10px] text-textGrey uppercase font-black flex justify-between">
-                <span>{t('Pickup Location')}</span>
-                {config.examCenter && <span className="text-purple-400">{availableLocations.length} {t('options')}</span>}
-            </label>
-            {config.examCenter ? (
-                <div className="flex flex-wrap gap-2">
-                {availableLocations.map(loc => (
-                    <button key={loc.id} type="button" onClick={() => setConfig({...config, location: loc.label})}
-                    className={`px-3 py-1.5 rounded-md text-xs font-bold border transition-all ${config.location === loc.label ? 'bg-purple-500 text-white border-purple-500' : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'}`}
-                    >
-                    {/* [FIXED] Wrap the location label key in t() */}
-                    {t(loc.label)}
-                    </button>
-                ))}
+        <div className={`space-y-2 relative animate-in fade-in slide-in-from-top-1 duration-200 ${showLocationDropdown ? 'z-[60]' : 'z-30'}`}>
+            <div className="space-y-1">
+                <label className="text-[10px] text-textGrey uppercase font-black flex justify-between">
+                    <span>{t('Pickup Location')}</span>
+                    {config.examCenter && <span className="text-purple-400">{availableLocations.length} {t('options')}</span>}
+                </label>
+                <div className="relative">
+                    <MapPin className="absolute left-3 top-3 text-textGrey z-10" size={18} />
+                    <input 
+                        type="text" disabled={!config.examCenter}
+                        placeholder={!config.examCenter ? t("Select Exam Center first...") : t("Select valid pickup point...")}
+                        value={t(config.location)} 
+                        onChange={e => { setConfig({...config, location: e.target.value}); setShowLocationDropdown(true); }}
+                        onFocus={() => setShowLocationDropdown(true)} onBlur={() => setTimeout(() => setShowLocationDropdown(false), 200)}
+                        className={`w-full pl-10 p-3 bg-midnight border rounded-lg text-white focus:border-purple-500 outline-none transition-colors ${!config.examCenter ? 'border-gray-800 opacity-50 cursor-not-allowed' : 'border-gray-700'}`}
+                    />
+                    {showLocationDropdown && filteredLocations.length > 0 && config.examCenter && (
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-slate border border-gray-700 rounded-lg shadow-xl overflow-hidden">
+                            <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                                {filteredLocations.map(loc => (
+                                    <div key={loc.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { setConfig({...config, location: loc.label}); setShowLocationDropdown(false); }} className="p-3 hover:bg-midnight cursor-pointer transition-colors border-b border-gray-800 last:border-0">
+                                        <span className="font-bold text-white text-sm">{t(loc.label)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
-            ) : (
-                <div className="p-3 bg-midnight border border-gray-800 rounded-lg text-xs text-gray-500 italic text-center">
-                    {t('Select an Exam Center to see valid pickup points.')}
+            </div>
+
+            {config.examCenter && (
+                <div className="flex flex-wrap gap-2">
+                    {availableLocations.map(loc => (
+                        <button key={loc.id} type="button" onClick={() => setConfig({...config, location: loc.label})}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold border transition-all ${config.location === loc.label ? 'bg-purple-500 text-white border-purple-500' : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'}`}
+                        >
+                            {t(loc.label)}
+                        </button>
+                    ))}
                 </div>
             )}
         </div>

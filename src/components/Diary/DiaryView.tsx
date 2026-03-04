@@ -22,12 +22,13 @@ interface Props {
   setEditingSlot: (slot: any) => void;
   lessonDuration: number; 
   onPublishDrafts: (draftsToPublish: any[]) => Promise<void>;
-  onOpenAutoFill: (weekStartDate: Date) => void;
+  onOpenAutoFill: (date: Date, singleDay?: boolean) => void;
   onCopyWeek: (slotsToCopy: any[], onSuccess: (msg: string) => void, onError: (msg: string) => void, onInfo?: (msg: string) => void) => Promise<void>;
   onSlotMove?: (originalSlot: any, newDate: string, newTime: string, status: string) => void;
   showToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
   onDeleteSlot?: (slot: any) => void;
   onBulkDelete?: (slotIds: string[], typeLabel: string) => void;
+  onBulkEdit?: (slotIds: string[], clearSelection: () => void) => void;
   onPasteSlot?: (copiedSlot: any, date: string, time: string, duration?: number) => void;
 }
 
@@ -213,6 +214,10 @@ const DraggableSlot = React.memo(function DraggableSlot({
               e.stopPropagation();
               e.preventDefault();
               onToggleSelect(slot.id);
+          } else if (copiedSlot) {
+              // --- NEW: Block clicks completely while in Copy Mode ---
+              e.stopPropagation();
+              e.preventDefault();
           }
       }}
       variants={{
@@ -432,8 +437,10 @@ const DayColumn = React.memo(function DayColumn({
                 {/* --- SUPER CLEAN HOVER VISUALS --- */}
                 {(!isPastHour && !isCurrentHour) && (
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-20 pointer-events-none">
-                        {!copiedSlot && (
-                            <div className="text-orange/50 text-2xl font-light select-none">+</div>
+                        {/* --- ADDED !isSelectMode HERE --- */}
+                        {(!copiedSlot && !isSelectMode) && (
+                            // --- NEW: Dynamic color based on Planning Mode ---
+                            <div className={`text-2xl font-light select-none ${isPlanningMode ? 'text-purple-500/50' : 'text-orange/50'}`}>+</div>
                         )}
                     </div>
                 )}
@@ -484,6 +491,7 @@ export function DiaryView({
   showToast,
   onDeleteSlot,
   onBulkDelete,
+  onBulkEdit,
   onPasteSlot,
 }: Props) {
   
@@ -495,6 +503,7 @@ export function DiaryView({
   });
   const [isPlanningMode, setIsPlanningMode] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [publishingCount, setPublishingCount] = useState<number | null>(null);
   const [isCopying, setIsCopying] = useState(false);
   const [copiedSlot, setCopiedSlot] = useState<any>(null);
   const [pasteHover, setPasteHover] = useState<{ dateStr: string, snappedY: number } | null>(null);
@@ -864,11 +873,15 @@ export function DiaryView({
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${
                     isSelectMode
                         ? 'bg-gray-800 text-gray-500 cursor-not-allowed opacity-50'
-                        : 'bg-orange text-white hover:bg-orange/90 shadow-[0_0_10px_rgba(249,115,22,0.2)]'
+                        : isPlanningMode
+                            ? 'bg-purple-500 text-white hover:bg-purple-600 shadow-[0_0_10px_rgba(168,85,247,0.3)]'
+                            : 'bg-orange text-white hover:bg-orange/90 shadow-[0_0_10px_rgba(249,115,22,0.2)]'
                 }`}
               >
                 <Plus size={16} strokeWidth={3} />
-                <span className="hidden sm:inline">Add Lesson</span>
+                <span className="hidden sm:inline">
+                    {isPlanningMode ? 'Add Draft' : 'Add Lesson'}
+                </span>
               </button>
 
               <div className="w-[1px] h-6 bg-gray-800 mx-1 hidden sm:block" />
@@ -925,7 +938,7 @@ export function DiaryView({
                           
                           <div className="absolute top-full mt-2 right-0 w-56 bg-slate border border-gray-800 rounded-xl shadow-2xl z-[100] p-1.5 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-200">
                               
-                              <button onClick={() => { onOpenAutoFill(days[0]); setIsPlanningMode(true); setShowManageMenu(false); }} disabled={isPastWeek} className="flex items-center gap-3 w-full text-left px-3 py-2.5 rounded-lg text-xs font-bold text-purple-400 hover:bg-purple-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                              <button onClick={() => { onOpenAutoFill(days[0], false); setIsPlanningMode(true); setShowManageMenu(false); }} disabled={isPastWeek} className="flex items-center gap-3 w-full text-left px-3 py-2.5 rounded-lg text-xs font-bold text-purple-400 hover:bg-purple-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                                   <Sparkles size={16} /> Auto-Fill Week
                               </button>
                               
@@ -997,36 +1010,36 @@ export function DiaryView({
           </div>
         </div>
 
-        {/* --- WEEKLY STATS DASHBOARD --- */}
+        {/* --- WEEKLY STATS DASHBOARD (SLIM VERSION) --- */}
         {weekly.hasSlots && (
-            <div className={`flex flex-wrap items-center gap-3 px-4 py-2.5 border-b border-gray-800 z-40 animate-in fade-in slide-in-from-top-2 duration-300 ${isDark ? 'bg-slate/50' : 'bg-gray-100'}`}>
+            <div className={`flex flex-wrap items-center gap-2 sm:gap-3 px-4 py-1.5 border-b border-gray-800 z-40 animate-in fade-in slide-in-from-top-2 duration-300 ${isDark ? 'bg-slate/50' : 'bg-gray-100'}`}>
                 
-                <div className="flex items-center gap-2 px-3 py-1 bg-yellow-400/10 rounded-lg border border-yellow-500/20">
-                    <span className="w-2 h-2 rounded-full bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.4)]"></span>
-                    <span className="text-[10px] uppercase font-black tracking-wider text-yellow-500">Open</span>
-                    <span className={`text-xs font-black ml-1 ${isDark ? 'text-white' : 'text-gray-800'}`}>{weekly.open.length}</span>
+                <div className="flex items-center gap-1.5 px-2 py-0.5 bg-yellow-400/10 rounded-md border border-yellow-500/20">
+                    <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.4)]"></span>
+                    <span className="text-[9px] uppercase font-black tracking-wider text-yellow-500">Open</span>
+                    <span className={`text-xs font-black ml-0.5 ${isDark ? 'text-white' : 'text-gray-800'}`}>{weekly.open.length}</span>
                 </div>
 
-                <div className="flex items-center gap-2 px-3 py-1 bg-orange/10 rounded-lg border border-orange/20">
-                    <span className="w-2 h-2 rounded-full bg-orange shadow-[0_0_8px_rgba(249,115,22,0.4)]"></span>
-                    <span className="text-[10px] uppercase font-black tracking-wider text-orange">Booked</span>
-                    <span className={`text-xs font-black ml-1 ${isDark ? 'text-white' : 'text-gray-800'}`}>{weekly.booked.length}</span>
+                <div className="flex items-center gap-1.5 px-2 py-0.5 bg-orange/10 rounded-md border border-orange/20">
+                    <span className="w-1.5 h-1.5 rounded-full bg-orange shadow-[0_0_8px_rgba(249,115,22,0.4)]"></span>
+                    <span className="text-[9px] uppercase font-black tracking-wider text-orange">Booked</span>
+                    <span className={`text-xs font-black ml-0.5 ${isDark ? 'text-white' : 'text-gray-800'}`}>{weekly.booked.length}</span>
                 </div>
 
-                <div className="flex items-center gap-2 px-3 py-1 bg-purple-500/10 rounded-lg border border-purple-500/20">
-                    <span className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.4)]"></span>
-                    <span className="text-[10px] uppercase font-black tracking-wider text-purple-400">Draft</span>
-                    <span className={`text-xs font-black ml-1 ${isDark ? 'text-white' : 'text-gray-800'}`}>{weekly.drafts.length}</span>
+                <div className="flex items-center gap-1.5 px-2 py-0.5 bg-purple-500/10 rounded-md border border-purple-500/20">
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.4)]"></span>
+                    <span className="text-[9px] uppercase font-black tracking-wider text-purple-400">Draft</span>
+                    <span className={`text-xs font-black ml-0.5 ${isDark ? 'text-white' : 'text-gray-800'}`}>{weekly.drafts.length}</span>
                 </div>
 
-                <div className="flex items-center gap-2 px-3 py-1 bg-red-500/10 rounded-lg border border-red-500/20">
-                    <span className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]"></span>
-                    <span className="text-[10px] uppercase font-black tracking-wider text-red-400">Blocked</span>
-                    <span className={`text-xs font-black ml-1 ${isDark ? 'text-white' : 'text-gray-800'}`}>{weekly.blocked.length}</span>
+                <div className="flex items-center gap-1.5 px-2 py-0.5 bg-red-500/10 rounded-md border border-red-500/20">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]"></span>
+                    <span className="text-[9px] uppercase font-black tracking-wider text-red-400">Blocked</span>
+                    <span className={`text-xs font-black ml-0.5 ${isDark ? 'text-white' : 'text-gray-800'}`}>{weekly.blocked.length}</span>
                 </div>
                 
-                <div className="ml-auto text-[10px] uppercase font-black tracking-wider text-textGrey">
-                    Total: <span className={`text-xs ml-0.5 ${isDark ? 'text-white' : 'text-gray-800'}`}>{weekly.all.length}</span> slots
+                <div className="ml-auto text-[9px] uppercase font-black tracking-wider text-textGrey mt-0.5">
+                    Total: <span className={`text-xs ml-0.5 ${isDark ? 'text-white' : 'text-gray-800'}`}>{weekly.all.length}</span>
                 </div>
             </div>
         )}
@@ -1079,8 +1092,21 @@ export function DiaryView({
                           const dateKey = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
                           const holidayName = holidays[dateKey];
 
+                          const today = new Date();
+                          today.setHours(0, 0, 0, 0);
+                          const isPastDay = day < today;
+
                           return (
-                              <div key={i} className={`flex-1 min-w-0 py-2.5 text-center border-r border-gray-800 last:border-r-0 relative ${holidayName ? 'bg-red-500/10' : 'bg-slate'}`}>
+                              <div key={i} 
+                                   // --- NEW: Click handler & Hover effects ---
+                                   onClick={() => {
+                                       if (!isSelectMode && !isPastDay) {
+                                           onOpenAutoFill(day, true);
+                                           setIsPlanningMode(true);
+                                       }
+                                   }}
+                                   className={`flex-1 min-w-0 py-2.5 text-center border-r border-gray-800 last:border-r-0 relative transition-colors ${holidayName ? 'bg-red-500/10' : 'bg-slate'} ${!isSelectMode && !isPastDay ? 'cursor-pointer hover:bg-white/5' : ''}`}
+                              >
                                   <div className={`text-[9px] uppercase font-black tracking-tighter ${isToday ? 'text-orange' : 'text-textGrey'}`}>
                                       {day.toLocaleDateString('en-GB', { weekday: 'short' })}
                                   </div>
@@ -1148,7 +1174,8 @@ export function DiaryView({
                             <div 
                                 className={`absolute inset-0 z-10 pointer-events-none transition-all duration-150 ease-in-out ${
                                     isSelectMode 
-                                        ? `${isDark ? 'bg-midnight/50' : 'bg-white/60'} backdrop-blur-[3px] opacity-100` 
+                                        // --- REMOVED: backdrop-blur-[3px] ---
+                                        ? `${isDark ? 'bg-midnight/50' : 'bg-white/60'} opacity-100` 
                                         : 'bg-transparent backdrop-blur-none opacity-0'
                                 }`} 
                             />
@@ -1212,44 +1239,162 @@ export function DiaryView({
       </div> 
       
       {/* --- FLOATING ACTION BAR --- */}
+      {/* 1. Full-width invisible wrapper to handle bulletproof CSS centering */}
+      <div className="absolute bottom-20 left-0 right-0 w-full flex justify-center z-[100] pointer-events-none">
         <AnimatePresence>
             {isSelectMode && selectedIds.length > 0 && (
               <motion.div 
-                initial={{ y: 100, x: "-50%", opacity: 0 }}
-                animate={{ y: 0, x: "-50%", opacity: 1 }}
-                exit={{ y: 100, x: "-50%", opacity: 0 }}
-                className="absolute bottom-20 left-1/2 bg-slate border border-gray-700 shadow-xl shadow-black/5 rounded-full px-4 sm:px-6 py-2.5 sm:py-3 flex items-center gap-3 sm:gap-4 z-[100]"
+                // 2. Simple, clean entrance/exit animation for the whole bar
+                initial={{ y: 50, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 50, opacity: 0 }}
+                transition={{ type: "spring", bounce: 0, duration: 0.3 }}
+                className="flex flex-col items-center gap-2 pointer-events-auto"
               >
-                <span className="text-sm font-bold text-white whitespace-nowrap">
-                  {selectedIds.length} Selected
-                </span>
-                
-                <div className="w-[1px] h-6 bg-gray-700" />
-                
-                <button 
-                  onClick={() => showToast?.('Bulk edit modal coming soon!', 'info')}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold text-xs transition-all bg-orange/20 border border-orange/50 text-orange hover:bg-orange hover:text-white shadow-[0_0_15px_rgba(249,115,22,0.15)] hover:shadow-[0_0_20px_rgba(249,115,22,0.4)]"
-              >
-                  <Edit2 size={14} /> <span className="hidden sm:inline">Edit</span>
-              </button>
-              
-              <button 
-                  onClick={() => {
-                      if (onBulkDelete) onBulkDelete(selectedIds, `${selectedIds.length} Selected Slots`);
-                      setIsSelectMode(false);
-                      setSelectedIds([]);
-                  }}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold text-xs transition-all bg-red-500/20 border border-red-500/50 text-red-400 hover:bg-red-500 hover:text-white shadow-[0_0_15px_rgba(239,68,68,0.15)] hover:shadow-[0_0_20px_rgba(239,68,68,0.4)]"
-              >
-                  <Trash2 size={14} /> <span className="hidden sm:inline">Delete</span>
-              </button>
-                
-                <button onClick={() => { setSelectedIds([]); setIsSelectMode(false); }} className="p-2 rounded-full hover:bg-white/10 text-gray-400 transition-colors ml-1 sm:ml-2">
-                    <X size={16} />
-                </button>
+                {(() => {
+                    const selectedSlots = slots.filter(s => selectedIds.includes(s.id));
+                    const draftsToPublish = selectedSlots.filter(s => s.status === 'Draft');
+                    
+                    const hasBlocks = selectedSlots.some(s => s.status === 'Blocked');
+                    const hasLessons = selectedSlots.some(s => s.status !== 'Blocked');
+                    const isMixed = hasBlocks && hasLessons;
+                    
+                    return (
+                        <>
+                            {/* --- SMART WARNING POPUP ABOVE THE BAR --- */}
+                            {isMixed && (
+                                <div className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 flex items-center gap-2 shadow-lg">
+                                    <AlertCircle size={14} className="text-yellow-500 shrink-0" />
+                                    <span className="text-[11px] font-bold text-gray-300">Cannot bulk edit a mix of Lessons and Blocked time</span>
+                                </div>
+                            )}
+
+                            {/* --- MAIN PILL MENU (100% STATIC INSIDE) --- */}
+                            <div className="bg-slate border border-gray-700 shadow-xl shadow-black/5 rounded-full px-4 sm:px-6 py-2.5 sm:py-3 flex items-center overflow-hidden">
+                                
+                                {/* --- EXPLICIT UNSELECT ALL --- */}
+                                <div className="flex flex-col items-start justify-center -space-y-0.5 shrink-0">
+                                    <span className="text-sm font-bold text-white whitespace-nowrap">
+                                      {selectedIds.length} Selected
+                                    </span>
+                                    <button 
+                                      onClick={() => setSelectedIds([])} 
+                                      className="text-[10px] font-bold text-gray-400 hover:text-white transition-colors"
+                                    >
+                                      Unselect All
+                                    </button>
+                                </div>
+                                
+                                <div className="w-[1px] h-6 bg-gray-700 shrink-0 ml-3 sm:ml-4" />
+                                
+                                {/* --- SMART PUBLISH BUTTON --- */}
+                            {(draftsToPublish.length > 0 || publishingCount !== null) && (
+                                <div className="flex items-center shrink-0">
+                                    <button 
+                                        onClick={async () => {
+                                            // 1. Prevent double clicks
+                                            if (isPublishing) return;
+                                            
+                                            // 2. Snapshot the count so the UI doesn't flash to "0"
+                                            setPublishingCount(draftsToPublish.length);
+                                            setIsPublishing(true);
+                                            
+                                            try {
+                                                // 3. Await the database save
+                                                await onPublishDrafts(draftsToPublish);
+                                                
+                                                // 4. Only close the bar if the save was successful
+                                                setIsSelectMode(false);
+                                                setSelectedIds([]);
+                                            } catch (error) {
+                                                console.error("Failed to publish:", error);
+                                                // If it fails, unlock the button so they can try again
+                                                setPublishingCount(null);
+                                            } finally {
+                                                // 5. Stop the spinner and clear the snapshot
+                                                setIsPublishing(false);
+                                                setTimeout(() => setPublishingCount(null), 150);
+                                            }
+                                        }}
+                                        disabled={isPublishing}
+                                        className="ml-3 sm:ml-4 h-9 flex items-center justify-center gap-2 px-3 sm:px-4 rounded-lg font-bold text-xs transition-colors bg-green-500/20 border border-green-500/50 text-green-600 dark:text-green-400 hover:bg-green-500 hover:text-white shadow-sm disabled:opacity-50 whitespace-nowrap"
+                                    >
+                                        {isPublishing ? (
+                                            <>
+                                                <Loader2 size={14} className="animate-spin" />
+                                                <span className="hidden sm:inline">Publishing {publishingCount}...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Send size={14} /> 
+                                                <span className="hidden sm:inline">Publish ({draftsToPublish.length})</span>
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            )}
+
+                                {/* --- EDIT BUTTON --- */}
+                                <button 
+                                  onClick={() => {
+                                      if (selectedIds.length === 1) {
+                                          // 1. Normal Edit for a single slot
+                                          const singleSlot = slots.find(s => s.id === selectedIds[0]);
+                                          if (singleSlot) {
+                                              setEditingSlot(singleSlot);
+                                              // We removed setIsSelectMode(false) and setSelectedIds([]) here
+                                              // so the selection stays active behind the modal!
+                                          }
+                                      } else {
+                                          // 2. Bulk Edit for multiple slots
+                                          if (onBulkEdit) {
+                                              onBulkEdit(selectedIds, () => {
+                                                  setIsSelectMode(false);
+                                                  setSelectedIds([]);
+                                              });
+                                          }
+                                      }
+                                  }}
+                                  disabled={isMixed}
+                                  className={`ml-3 sm:ml-4 shrink-0 h-9 flex items-center justify-center gap-2 px-3 sm:px-4 rounded-lg font-bold text-xs transition-colors whitespace-nowrap ${
+                                      isMixed
+                                          ? 'bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-500 cursor-not-allowed opacity-50'
+                                          : 'bg-orange/20 border border-orange/50 text-orange hover:bg-orange hover:text-white shadow-sm'
+                                  }`}
+                                >
+                                  <Edit2 size={14} /> 
+                                  <span className="hidden sm:inline">
+                                      {selectedIds.length === 1 ? 'Edit' : 'Bulk Edit'}
+                                  </span>
+                                </button>
+                              
+                                {/* --- DELETE BUTTON --- */}
+                                <button 
+                                    onClick={() => {
+                                        if (onBulkDelete) onBulkDelete(selectedIds, `${selectedIds.length} Selected Slots`);
+                                        setIsSelectMode(false);
+                                        setSelectedIds([]);
+                                    }}
+                                    className="ml-3 sm:ml-4 shrink-0 h-9 flex items-center justify-center gap-2 px-3 sm:px-4 rounded-lg font-bold text-xs transition-colors bg-red-500/20 border border-red-500/50 text-red-500 dark:text-red-400 hover:bg-red-500 hover:text-white shadow-sm whitespace-nowrap"
+                                >
+                                    <Trash2 size={14} /> <span className="hidden sm:inline">Delete</span>
+                                </button>
+                                  
+                                {/* --- CLOSE BUTTON --- */}
+                                <button 
+                                    onClick={() => { setSelectedIds([]); setIsSelectMode(false); }} 
+                                    className="ml-4 sm:ml-6 shrink-0 h-9 w-9 flex items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400 transition-colors"
+                                >
+                                    <X size={16} />
+                                </button>
+                            </div>
+                        </>
+                    );
+                })()}
               </motion.div>
             )}
         </AnimatePresence>
+      </div>
         
       {/* DragOverlay */}
       <DragOverlay dropAnimation={null}>
