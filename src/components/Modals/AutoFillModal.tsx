@@ -76,15 +76,19 @@ export function AutoFillModal({ isOpen, onClose, onGenerate, isGenerating, teach
             defaultWorkingDays = [1, 2, 3, 4, 5].filter(day => !disabledDays.includes(day));
         }
 
-        setConfig(prev => ({
-            ...prev,
+        setConfig({
             workingDays: defaultWorkingDays, 
+            startTime: '08:00',
+            endTime: '18:00',
             lessonDuration: Number(defaultDuration) || 45,
             isDouble: !!defaultDouble,
             vehicleType: teacherVehicles && teacherVehicles.length > 0 ? teacherVehicles[0] : '1a',
+            hasLunch: true,
+            lunchStart: '12:30',
+            lunchEnd: '13:30',
             examCenter: defaultCenter,
             location: defaultLocation 
-        }));
+        });
     } else {
         // --- NEW: Reset all dropdowns when the modal closes ---
         setShowCenterDropdown(false);

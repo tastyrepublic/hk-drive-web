@@ -587,6 +587,146 @@ export function useLessonManager(user: any, slots: any[], profile: any, holidays
     }
   };
 
+  // --- Copy Day ---
+  const copyDay = async (
+    sourceDate: Date, 
+    targetDate: Date, 
+    onSuccess: (msg: string) => void, 
+    onError: (msg: string) => void,
+    onInfo?: (msg: string) => void
+  ) => {
+    if (!user) return;
+
+    const sourceDateStr = `${sourceDate.getFullYear()}-${String(sourceDate.getMonth() + 1).padStart(2, '0')}-${String(sourceDate.getDate()).padStart(2, '0')}`;
+    const targetDateStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-${String(targetDate.getDate()).padStart(2, '0')}`;
+
+    const slotsToCopy = slots.filter(s => s.date === sourceDateStr);
+
+    if (slotsToCopy.length === 0) {
+        if (onInfo) onInfo("No lessons to copy on this day.");
+        return;
+    }
+
+    // Past Day Check
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const targetDayStart = new Date(targetDate);
+    targetDayStart.setHours(0, 0, 0, 0);
+
+    if (targetDayStart < today) {
+        onError("Cannot copy lessons to a past date.");
+        return;
+    }
+
+    setSaveLoading(true);
+
+    try {
+        const batch = writeBatch(db);
+        let copiedCount = 0;
+        let skipReasons = { collisions: 0, restrictions: 0, past: 0, other: 0 };
+
+        const now = new Date();
+        const currentMins = now.getHours() * 60 + now.getMinutes();
+        const isToday = targetDayStart.getTime() === today.getTime();
+
+        slotsToCopy.forEach(slot => {
+            const effectiveDuration = slot.duration || (slot.isDouble ? Number(profile?.lessonDuration) * 2 : Number(profile?.lessonDuration)) || 45;
+            let isValid = true;
+            let errorMsg = '';
+
+            const [h, m] = (slot.time || "00:00").split(':').map(Number);
+            const startMins = h * 60 + m;
+
+            // 1. Check for past times if copying to TODAY
+            if (isToday && startMins < currentMins) {
+                isValid = false;
+                errorMsg = 'Past';
+            } 
+            // 2. Blocked Slots (Only check for physical collisions)
+            else if (slot.status === 'Blocked') {
+                const endMins = startMins + effectiveDuration;
+                const isOverlapping = slots.some(s => {
+                    if (s.date !== targetDateStr) return false;
+                    const [sh, sm] = (s.time || "00:00").split(':').map(Number);
+                    const sStart = sh * 60 + sm;
+                    const sEnd = sStart + (s.duration || (s.isDouble ? 90 : 45));
+                    return startMins < sEnd && endMins > sStart;
+                });
+                if (isOverlapping) {
+                    isValid = false;
+                    errorMsg = 'Collision';
+                }
+            } 
+            // 3. Normal Lessons (Reuse your robust Gatekeeper!)
+            else {
+                const check = checkSlotValidity(
+                    targetDateStr, 
+                    slot.time, 
+                    effectiveDuration, 
+                    slots, 
+                    undefined, 
+                    holidays
+                );
+                isValid = check.valid;
+                errorMsg = check.error || '';
+            }
+
+            if (isValid) {
+                const newSlotRef = doc(collection(db, "slots"));
+                const cleanSlot = { ...slot };
+                delete cleanSlot.id;
+
+                const newStatus = cleanSlot.status === 'Blocked' ? 'Blocked' : 'Draft';
+
+                batch.set(newSlotRef, {
+                    ...cleanSlot,
+                    studentId: '', 
+                    date: targetDateStr,
+                    status: newStatus,
+                    duration: effectiveDuration,
+                    createdAt: now.toISOString()
+                });
+                copiedCount++;
+            } else {
+                if (errorMsg.includes('Collision')) skipReasons.collisions++;
+                else if (errorMsg.includes('Past')) skipReasons.past++;
+                else if (errorMsg.includes('Restricted') || errorMsg.includes('Too Early') || errorMsg.includes('Too Late')) skipReasons.restrictions++;
+                else skipReasons.other++;
+            }
+        });
+
+        if (copiedCount > 0) {
+            await batch.commit();
+            
+            let skippedMsg = '';
+            const totalSkipped = skipReasons.collisions + skipReasons.restrictions + skipReasons.past + skipReasons.other;
+            
+            if (totalSkipped > 0) {
+                let details = [];
+                if (skipReasons.collisions > 0) details.push(`${skipReasons.collisions} overlaps`);
+                if (skipReasons.restrictions > 0) details.push(`${skipReasons.restrictions} restricted/holidays`);
+                if (skipReasons.past > 0) details.push(`${skipReasons.past} past times`);
+                if (skipReasons.other > 0) details.push(`${skipReasons.other} other errors`);
+                
+                skippedMsg = ` (Skipped ${totalSkipped}: ${details.join(', ')})`;
+            }
+            
+            if (totalSkipped > 0 && onInfo) {
+                onInfo(`Copied ${copiedCount} lessons!${skippedMsg}`);
+            } else {
+                onSuccess(`Copied ${copiedCount} lessons!`);
+            }
+        } else {
+            onError("Could not copy. All slots hit restricted zones, past times, or overlaps.");
+        }
+    } catch (error) {
+        console.error("Copy Day Error:", error);
+        onError("Error copying day");
+    } finally {
+        setSaveLoading(false);
+    }
+  };
+
   return { 
     saveLesson, 
     deleteLesson,
@@ -596,6 +736,7 @@ export function useLessonManager(user: any, slots: any[], profile: any, holidays
     bulkUpdateLessons,
     saveLoading, 
     validationMsg, 
-    setValidationMsg 
+    setValidationMsg,
+    copyDay 
   };
 }

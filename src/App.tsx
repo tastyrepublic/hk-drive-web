@@ -1,22 +1,21 @@
 import { useState, useEffect } from 'react';
 import './i18n';
 import { RootRouter } from './components/RootRouter/RootRouter';
-import { Toast } from './components/Toast/Toast';
+// 1. Import the Toast component AND the ToastMessage interface
+import { Toast, type ToastMessage } from './components/Toast/Toast';
 
-// Types
+// Types (Added 'info' to match your Dashboard)
 type Theme = 'dark' | 'light';
-type ToastType = 'success' | 'error';
+type ToastType = 'success' | 'error' | 'info';
 
 function App() {
-  // 1. Theme State (Lifted up so it persists across all pages)
   const [theme, setTheme] = useState<Theme>(
     (localStorage.getItem('hk-theme') as Theme) || 'dark'
   );
 
-  // 2. Global Toast State (So notifications work everywhere)
-  const [toast, setToast] = useState<{ msg: string; type: ToastType } | null>(null);
+  // 2. Change state to hold an ARRAY of toasts
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  // 3. Theme Effect: Syncs with HTML/LocalStorage
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('hk-theme', theme);
@@ -24,18 +23,23 @@ function App() {
 
   const toggleTheme = () => setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
 
-  // 4. Toast Helper Function
+  // 3. Update showToast to stack messages with unique IDs
   const showToast = (msg: string, type: ToastType = 'success') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
+    const id = Date.now() + Math.random(); // Unique ID for every toast
+    
+    setToasts((prev) => [...prev, { id, msg, type }]);
+
+    // Only remove this specific toast after 3 seconds
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 3000);
   };
 
   return (
     <>
-      {/* Global Toast Layer - Renders on top of everything */}
-      {toast && <Toast msg={toast.msg} type={toast.type} />}
+      {/* 4. Pass the array directly to the Toast component */}
+      <Toast toasts={toasts} />
 
-      {/* The Router acts as the traffic controller */}
       <RootRouter 
         theme={theme} 
         toggleTheme={toggleTheme} 

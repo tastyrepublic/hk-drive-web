@@ -1,6 +1,6 @@
 import { AlertTriangle, Trash2, Loader2, MapPin, Search, Car, Coffee, ChevronDown, Check } from 'lucide-react';
 import { Modal } from './Modal';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TimeSelect } from '../Shared/TimeSelect';
 import { DateSelect } from '../Shared/DateSelect';
@@ -113,6 +113,8 @@ export function EditLessonModal({
 
   // Add this right before your useEffect
   const initRef = useRef<any>(null);
+  const baselineLessonRef = useRef<any>(null);
+  const baselineBlockRef = useRef<any>(null);
 
   useEffect(() => {
     // 1. Reset the tracker when the modal closes
@@ -201,6 +203,9 @@ export function EditLessonModal({
                 return; 
             }
         }
+
+        baselineLessonRef.current = enrichedLesson;
+        baselineBlockRef.current = enrichedBlock;
 
         setLessonSnapshot(enrichedLesson);
         setBlockSnapshot(enrichedBlock);
@@ -324,6 +329,32 @@ export function EditLessonModal({
   const focusBorder = isDraft ? 'focus:border-purple-500' : 'focus:border-orange';
   const themeVariant = isDraft ? 'purple' : (isBlockMode ? 'blocked' : 'orange');
 
+  // --- THE ENTERPRISE FIX: Strict field-by-field comparison ---
+  const hasHiddenChanges = useMemo(() => {
+      if (!baselineLessonRef.current || !baselineBlockRef.current) return false;
+      
+      const checkDrift = (current: any, baseline: any) => {
+          if (!current || !baseline) return false;
+          return (
+              current.date !== baseline.date || current.time !== baseline.time || 
+              (current.location || '') !== (baseline.location || '') || 
+              (current.studentId || '') !== (baseline.studentId || '') || 
+              (current.type || '') !== (baseline.type || '') ||
+              (current.blockReason || '') !== (baseline.blockReason || '') || 
+              (current.status || 'Booked') !== (baseline.status || 'Booked') || 
+              (!!current.isDouble) !== (!!baseline.isDouble) || 
+              (current.endTime || '') !== (baseline.endTime || '') ||
+              (current.duration || 0) !== (baseline.duration || 0) ||
+              (current.examCenter || '') !== (baseline.examCenter || '')
+          );
+      };
+
+      const isLessonCacheDirty = checkDrift(lessonSnapshot, baselineLessonRef.current);
+      const isBlockCacheDirty = checkDrift(blockSnapshot, baselineBlockRef.current);
+      
+      return isLessonCacheDirty || isBlockCacheDirty;
+  }, [lessonSnapshot, blockSnapshot]);
+
   return (
     <Modal
       isOpen={isOpen}
@@ -331,7 +362,7 @@ export function EditLessonModal({
       title={isEditing ? (isBlockMode ? "Edit Block" : "Edit Lesson") : "Add New Slot"} 
       maxWidth="max-w-md"
       isSaving={saveSlotLoading}
-      isModified={isSlotModified}
+      isModified={isSlotModified || hasHiddenChanges}
       footer={
         <div className="flex justify-between items-center gap-4">
            {isEditing ? (

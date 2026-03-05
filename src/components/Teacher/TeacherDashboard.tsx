@@ -100,7 +100,7 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
   const holidays = useHolidays();
   
   const { 
-    saveLesson, deleteLesson, autoScheduleWeek, copyWeekToNext, bulkDeleteLessons, bulkUpdateLessons, saveLoading: saveSlotLoading, validationMsg, setValidationMsg 
+    saveLesson, deleteLesson, autoScheduleWeek, copyWeekToNext, bulkDeleteLessons, bulkUpdateLessons, saveLoading: saveSlotLoading, validationMsg, setValidationMsg, copyDay 
   } = useLessonManager(user, slots, profile, holidays);
 
   const {
@@ -547,6 +547,14 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
                               setClearSelectionCallback(() => clearFn); // <--- SAVE THE CALLBACK
                           }}
                           onPasteSlot={handlePasteSlot}
+                          onCopyDay={async (source, target) => {
+                              await copyDay(
+                              source, target, 
+                              (msg) => showToast(msg, 'success'), 
+                              (err) => showToast(err, 'error'), 
+                              (info) => showToast(info, 'info')
+                              );
+                          }}
                           onBulkDelete={(slotIds: string[], typeLabel: string) => {
                               setConfirmDialog({
                                   isOpen: true,

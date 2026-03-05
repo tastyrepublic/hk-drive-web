@@ -32,6 +32,7 @@ interface Props {
   onBulkDelete?: (slotIds: string[], typeLabel: string) => void;
   onBulkEdit?: (slotIds: string[], clearSelection: () => void) => void;
   onPasteSlot?: (copiedSlot: any, date: string, time: string, duration?: number) => void;
+  onCopyDay?: (sourceDate: Date, targetDate: Date) => Promise<void>;
 }
 
 const HOURS = Array.from({ length: 18 }, (_, i) => i + 6);
@@ -509,6 +510,7 @@ export function DiaryView({
   onBulkDelete,
   onBulkEdit,
   onPasteSlot,
+  onCopyDay,
 }: Props) {
   
   const [[weekOffset, direction], setWeekOffset] = useState([0, 0]);
@@ -522,7 +524,15 @@ export function DiaryView({
   const [isCopying, setIsCopying] = useState(false);
   const [copiedSlot, setCopiedSlot] = useState<any>(null);
   const [pasteHover, setPasteHover] = useState<{ dateStr: string, snappedY: number } | null>(null);
-
+  const [dayMenu, setDayMenu] = useState<{ 
+      day: Date, 
+      x: number, 
+      y: number, 
+      rightEdge: number, 
+      alignRight: boolean, 
+      hasSlots: boolean, 
+      isPastDay: boolean 
+  } | null>(null);
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
@@ -1123,14 +1133,28 @@ export function DiaryView({
 
                           return (
                               <div key={i} 
-                                   // --- NEW: Click handler & Hover effects ---
-                                   onClick={() => {
-                                       if (!isSelectMode && !isPastDay) {
-                                           onOpenAutoFill(day, true);
-                                           setIsPlanningMode(true);
+                                   onClick={(e) => {
+                                       if (!isSelectMode) {
+                                           const rect = e.currentTarget.getBoundingClientRect();
+                                           const dSlots = slotsByDate[dateKey] || [];
+                                           
+                                           // --- THE FIX: Use clientWidth to ignore the scrollbar gap! ---
+                                           const viewportWidth = document.documentElement.clientWidth;
+                                           const menuWidth = 220; 
+                                           const alignRight = rect.left + menuWidth > viewportWidth;
+
+                                           setDayMenu({
+                                               day: day,
+                                               x: rect.left,
+                                               rightEdge: viewportWidth - rect.right,
+                                               y: rect.bottom + 8,
+                                               alignRight: alignRight, 
+                                               hasSlots: dSlots.length > 0,
+                                               isPastDay: isPastDay
+                                           });
                                        }
                                    }}
-                                   className={`flex-1 min-w-0 py-2.5 text-center border-r border-gray-800 last:border-r-0 relative transition-colors ${holidayName ? 'bg-red-500/10' : 'bg-slate'} ${!isSelectMode && !isPastDay ? 'cursor-pointer hover:bg-white/5' : ''}`}
+                                   className={`flex-1 min-w-0 py-2.5 text-center border-r border-gray-800 last:border-r-0 relative transition-colors ${holidayName ? 'bg-red-500/10' : 'bg-slate'} ${!isSelectMode ? 'cursor-pointer hover:bg-white/5' : ''}`}
                               >
                                   <div className={`text-[9px] uppercase font-black tracking-tighter ${isToday ? 'text-orange' : 'text-textGrey'}`}>
                                       {day.toLocaleDateString('en-GB', { weekday: 'short' })}
@@ -1511,6 +1535,79 @@ export function DiaryView({
         </>,
         document.body
       )}
+    {/* --- NEW: DAY HEADER MENU PORTAL --- */}
+      {dayMenu && createPortal(
+        <>
+            <div className="fixed inset-0 z-[9998]" onClick={() => setDayMenu(null)} onContextMenu={(e) => { e.preventDefault(); setDayMenu(null); }} />
+            
+            <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="fixed z-[9999] bg-slate border border-gray-700 shadow-2xl rounded-lg py-1.5 min-w-[200px] overflow-hidden"
+                style={{ 
+                    top: dayMenu.y, 
+                    ...(dayMenu.alignRight ? { right: dayMenu.rightEdge } : { left: dayMenu.x }) 
+                }}
+            >
+                <div className="px-4 py-2 text-[11px] uppercase font-black text-textGrey tracking-wider border-b border-gray-800 mb-1">
+                    {dayMenu.day.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}
+                </div>
+
+                {!dayMenu.isPastDay && (
+                    <button 
+                        onClick={() => { onOpenAutoFill(dayMenu.day, true); setIsPlanningMode(true); setDayMenu(null); }}
+                        className="w-full flex items-center gap-3 text-left px-4 py-2.5 text-sm font-bold text-purple-400 hover:bg-purple-500/10 transition-colors"
+                    >
+                        <Sparkles size={16} /> Auto-Fill Day
+                    </button>
+                )}
+
+                {/* --- THE FIX: Calculate if target days are in the past --- */}
+                {(() => {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+
+                    const prevDay = new Date(dayMenu.day);
+                    prevDay.setDate(prevDay.getDate() - 1);
+                    const isPrevPast = prevDay < today;
+
+                    const nextDay = new Date(dayMenu.day);
+                    nextDay.setDate(nextDay.getDate() + 1);
+                    const isNextPast = nextDay < today;
+
+                    return (
+                        <>
+                            <button 
+                                onClick={async () => {
+                                    if (onCopyDay) await onCopyDay(dayMenu.day, prevDay);
+                                    setDayMenu(null);
+                                }}
+                                // Disable if no slots OR if target is in the past
+                                disabled={!dayMenu.hasSlots || isPrevPast}
+                                className="w-full flex items-center gap-3 text-left px-4 py-2.5 text-sm font-bold text-blue-400 hover:bg-blue-500/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                            >
+                                <ChevronLeft size={16} /> Copy to Prev Day
+                            </button>
+
+                            <button 
+                                onClick={async () => {
+                                    if (onCopyDay) await onCopyDay(dayMenu.day, nextDay);
+                                    setDayMenu(null);
+                                }}
+                                // Disable if no slots OR if target is in the past
+                                disabled={!dayMenu.hasSlots || isNextPast}
+                                className="w-full flex items-center gap-3 text-left px-4 py-2.5 text-sm font-bold text-blue-400 hover:bg-blue-500/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                            >
+                                <ChevronRight size={16} /> Copy to Next Day
+                            </button>
+                        </>
+                    );
+                })()}
+            </motion.div>
+        </>,
+        document.body
+      )}
+
     </DndContext>
   );
 }
