@@ -1368,15 +1368,11 @@ export function DiaryView({
                                 <button 
                                   onClick={() => {
                                       if (selectedIds.length === 1) {
-                                          // 1. Normal Edit for a single slot
                                           const singleSlot = slots.find(s => s.id === selectedIds[0]);
                                           if (singleSlot) {
                                               setEditingSlot(singleSlot);
-                                              // We removed setIsSelectMode(false) and setSelectedIds([]) here
-                                              // so the selection stays active behind the modal!
                                           }
                                       } else {
-                                          // 2. Bulk Edit for multiple slots
                                           if (onBulkEdit) {
                                               onBulkEdit(selectedIds, () => {
                                                   setIsSelectMode(false);
@@ -1386,10 +1382,14 @@ export function DiaryView({
                                       }
                                   }}
                                   disabled={isMixed}
-                                  className={`ml-3 sm:ml-4 shrink-0 h-9 flex items-center justify-center gap-2 px-3 sm:px-4 rounded-lg font-bold text-xs transition-colors whitespace-nowrap ${
+                                  // --- THE FIX: Match the Diary Menu exactly ---
+                                  // Changed 'transition-colors' to 'transition-all'
+                                  // Moved 'border' to the base class
+                                  // Replaced the 'dark:' classes with the clean gray-800 standard
+                                  className={`ml-3 sm:ml-4 shrink-0 h-9 flex items-center justify-center gap-2 px-3 sm:px-4 rounded-lg font-bold text-xs transition-all border whitespace-nowrap ${
                                       isMixed
-                                          ? 'bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-500 cursor-not-allowed opacity-50'
-                                          : 'bg-orange/20 border border-orange/50 text-orange hover:bg-orange hover:text-white shadow-sm'
+                                          ? 'bg-gray-800 text-gray-500 border-gray-700 cursor-not-allowed opacity-50'
+                                          : 'bg-orange/20 border-orange/50 text-orange hover:bg-orange hover:text-white shadow-sm'
                                   }`}
                                 >
                                   <Edit2 size={14} /> 

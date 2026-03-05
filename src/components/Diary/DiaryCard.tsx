@@ -1,7 +1,10 @@
 import { Edit2, User, CheckCircle2, Ban, Smartphone } from 'lucide-react';
-import { BLOCK_REASONS } from '../../constants/list';
+import { useTranslation } from 'react-i18next';
+import { BLOCK_REASONS, getVehicleLabel, getExamCenterLabel } from '../../constants/list';
 
 export function DiaryCard({ slot, setEditingSlot }: any) { 
+  const { t } = useTranslation();
+
   // 1. Determine Status
   const isBlocked = slot.status === 'Blocked';
   const isDraft = slot.status === 'Draft'; 
@@ -9,17 +12,16 @@ export function DiaryCard({ slot, setEditingSlot }: any) {
   const isEffectiveBooked = (!isBlocked && hasStudent) || isDraft;
   const isSelfBooked = slot.bookedBy === 'student';
 
+  // --- THE FIX: Smart, translated vehicle label ---
   const vehicleLabel = slot.type && !isBlocked 
-    ? (slot.type.includes('1A') ? '1A' : slot.type.includes('2') ? '2' : slot.type.split(' ')[0])
+    ? t(getVehicleLabel(slot.type)).replace('Private Car', 'Car').replace('Light Goods', 'Van')
     : null;
 
   return (
     <div 
-      // [FIXED] Removed overflow-hidden and shadows for a perfectly flat, clean aesthetic
       className={`h-full w-full p-2 flex flex-col cursor-pointer transition-all
         rounded-tl-md rounded-tr-md rounded-bl-md rounded-br-3xl
         ${isDraft
-            // [FIXED] Kept the blur and border, but removed the neon shadow to stop the glitch
             ? 'bg-purple-500/20 backdrop-blur-md text-purple-500 border border-purple-500/50 hover:bg-purple-500/30' 
             : isEffectiveBooked 
               ? 'bg-orange text-white'      
@@ -35,21 +37,19 @@ export function DiaryCard({ slot, setEditingSlot }: any) {
       {/* Header: Time & Badges */}
       <div className="flex justify-between items-start mb-0.5 flex-shrink-0">
         
-        {/* [FIXED] Time text shifts to purple-300 for drafts instead of hardcoded white */}
         <span className={`text-[10px] font-black leading-none ${isDraft ? 'text-purple-300' : isEffectiveBooked || isBlocked ? 'text-white/90' : 'text-inherit opacity-80'}`}>
           {slot.time} - {slot.endTime}
         </span>
         
         <div className="flex items-center gap-1">
             {isSelfBooked && isEffectiveBooked && (
-                <div className="bg-white/20 p-0.5 rounded" title="Student Booked via App">
+                <div className="bg-white/20 p-0.5 rounded" title={t("Student Booked via App")}>
                     <Smartphone size={8} className="text-white" />
                 </div>
             )}
 
-            {/* [FIXED] Vehicle badge gets a glassy purple background for drafts */}
             {!isBlocked && vehicleLabel && (
-                <div className={`text-[8px] font-black px-1 rounded ${isDraft ? 'bg-purple-500/20 text-purple-300' : isEffectiveBooked ? 'bg-black/20 text-white' : 'bg-yellow-900/10 text-yellow-900'}`}>
+                <div className={`text-[8px] font-black px-1 rounded truncate max-w-[60px] ${isDraft ? 'bg-purple-500/20 text-purple-300' : isEffectiveBooked ? 'bg-black/20 text-white' : 'bg-yellow-900/10 text-yellow-900'}`}>
                     {vehicleLabel}
                 </div>
             )}
@@ -66,36 +66,41 @@ export function DiaryCard({ slot, setEditingSlot }: any) {
             <div className="flex items-center gap-1 mb-0.5 opacity-80">
                <User size={10} />
                <span className="text-[9px] font-bold uppercase">
-                 {isDraft ? 'Draft Lesson' : 'Student'}
+                 {/* --- THE FIX: Translated statuses --- */}
+                 {isDraft ? t('Draft Lesson') : t('Student')}
                </span>
             </div>
             
             <div className="text-[12px] font-black leading-tight truncate">
-              {slot.studentName || 'Unknown Student'}
+              {slot.studentName || t('Unknown Student')}
             </div>
             
-             {/* [FIXED] Location text shifts to purple-400/80 for drafts instead of hardcoded white/70 */}
-             <div className={`text-[9px] font-bold truncate uppercase mt-0.5 ${isDraft ? 'text-purple-400/80' : 'text-white/70'}`}>
-              {slot.location}
+             {/* --- THE FIX: Combine Exam Center and Location --- */}
+             <div className={`text-[9px] font-bold truncate mt-0.5 ${isDraft ? 'text-purple-400/80' : 'text-white/70'}`}>
+              {slot.examCenter ? `${t(getExamCenterLabel(slot.examCenter))} • ` : ''}{t(slot.location)}
              </div>
           </>
         ) : isBlocked ? (
           <>
             <div className="flex items-center gap-1 mb-0.5 opacity-80">
                <Ban size={10} />
-               <span className="text-[9px] font-bold uppercase">Blocked</span>
+               <span className="text-[9px] font-bold uppercase">{t('Blocked')}</span>
             </div>
             <div className="text-[12px] font-black leading-tight truncate">
-               {BLOCK_REASONS.find(r => r.id === slot.blockReason)?.label || slot.blockReason || 'Personal'}
+               {/* --- THE FIX: Correctly translate Block Reasons --- */}
+               {slot.blockReason 
+                  ? t(BLOCK_REASONS.find(r => r.id === slot.blockReason)?.label || slot.blockReason) 
+                  : t('Personal')}
             </div>
           </>
         ) : (
           <>
             <div className="text-[11px] font-black leading-tight truncate uppercase tracking-wide opacity-80 mt-1">
-              OPEN SLOT
+              {t('OPEN SLOT')}
             </div>
-             <div className="text-[9px] font-bold opacity-60 truncate uppercase">
-               {slot.location}
+             {/* --- THE FIX: Combine Exam Center and Location for Open Slots --- */}
+             <div className="text-[9px] font-bold opacity-60 truncate">
+               {slot.examCenter ? `${t(getExamCenterLabel(slot.examCenter))} • ` : ''}{t(slot.location)}
              </div>
           </>
         )}
