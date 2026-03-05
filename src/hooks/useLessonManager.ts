@@ -14,7 +14,8 @@ interface LessonForm {
   duration?: number;
   isDouble?: boolean; 
   status?: 'Booked' | 'Blocked' | 'Open' | 'Draft'; 
-  examCenter?: string; 
+  examCenter?: string;
+  blockReason?: string; 
 }
 
 // Helper to calculate end time string for the database
@@ -93,7 +94,7 @@ export function useLessonManager(user: any, slots: any[], profile: any, holidays
           }
       } else {
           // Blocked Slot Validation (Ignores Restricted Zones)
-          if (!form.type) {
+          if (!form.blockReason) { // <--- STRICT CHECK
              onError("Please select or type a reason!");
              setSaveLoading(false);
              return;
@@ -139,14 +140,17 @@ export function useLessonManager(user: any, slots: any[], profile: any, holidays
         date: form.date,
         time: form.time,
         endTime: newEndTime,
-        location: form.location || '', 
+        // --- THE FIX: Erase location if converting to a Block ---
+        location: isBlockMode ? '' : (form.location || ''), 
         studentId: form.studentId || '', 
         isDouble: !!form.isDouble,
-        type: form.type, 
+        type: isBlockMode ? '' : form.type,
+        blockReason: isBlockMode ? form.blockReason || '' : '',
         status: finalStatus,
         bookedBy: bookedBy,
         duration: finalDuration, 
-        examCenter: form.examCenter || '' 
+        // --- THE FIX: Erase examCenter if converting to a Block ---
+        examCenter: isBlockMode ? '' : (form.examCenter || '') 
       };
 
       // --- 6. DATABASE OPERATION ---
@@ -257,7 +261,7 @@ export function useLessonManager(user: any, slots: any[], profile: any, holidays
                             endTime: config.lunchEnd,
                             duration: lunchEndMins - lunchStartMins,
                             status: 'Blocked',
-                            type: 'lunch', 
+                            type: '', 
                             blockReason: 'block_reason.lunch',
                             createdAt: new Date().toISOString()
                         });

@@ -20,7 +20,9 @@ interface Props {
   isDark?: boolean;  
   slots: any[];
   setEditingSlot: (slot: any) => void;
-  lessonDuration: number; 
+  lessonDuration: number;
+  isPlanningMode?: boolean;
+  setIsPlanningMode?: (val: boolean) => void; 
   onPublishDrafts: (draftsToPublish: any[]) => Promise<void>;
   onOpenAutoFill: (date: Date, singleDay?: boolean) => void;
   onCopyWeek: (slotsToCopy: any[], onSuccess: (msg: string) => void, onError: (msg: string) => void, onInfo?: (msg: string) => void) => Promise<void>;
@@ -268,7 +270,9 @@ const DayColumn = React.memo(function DayColumn({
     selectedIds, toggleSelection, handleContextMenu, 
     copiedSlot,
     onPasteSlot, onCancelCopy,
-    pasteHover, setPasteHover
+    pasteHover, setPasteHover,
+    onCancelSelect,
+    showToast
 }: any) {
   const { setNodeRef } = useDroppable({ id: dateStr });
 
@@ -399,8 +403,18 @@ const DayColumn = React.memo(function DayColumn({
               style={cellStyle}
               className={cellClass}
               onClick={(e) => {
-    e.stopPropagation();
-    if (isPastHour || isSelectMode) return; 
+                e.stopPropagation();
+                  if (isPastHour) {
+                      if (copiedSlot && showToast) {
+                          showToast("Cannot paste lessons into the past", "error");
+                      }
+                      return; 
+                  }
+
+                  if (isSelectMode) {
+                      if (onCancelSelect) onCancelSelect();
+                      return;
+                  } 
 
     let finalSmartTime = getSmartStartTime(h, daySlots, lessonDuration);
 
@@ -483,7 +497,9 @@ export function DiaryView({
   isDark,  
   slots, 
   setEditingSlot, 
-  lessonDuration = 60, 
+  lessonDuration = 60,
+  isPlanningMode = false,
+  setIsPlanningMode = () => {}, 
   onPublishDrafts, 
   onOpenAutoFill, 
   onCopyWeek, 
@@ -501,7 +517,6 @@ export function DiaryView({
       hour: new Date().getHours(), 
       minute: new Date().getMinutes() 
   });
-  const [isPlanningMode, setIsPlanningMode] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishingCount, setPublishingCount] = useState<number | null>(null);
   const [isCopying, setIsCopying] = useState(false);
@@ -550,6 +565,8 @@ export function DiaryView({
   // --- NEW: Disable menu if we are currently in copy/paste mode ---
   if (copiedSlot) {
     e.preventDefault();
+    setCopiedSlot(null);
+    setPasteHover(null);
     return;
   }
   
@@ -838,7 +855,13 @@ export function DiaryView({
         autoScroll={false} 
     >   
       <div 
-          onContextMenu={(e) => e.preventDefault()} 
+          onContextMenu={(e) => { 
+              e.preventDefault();
+              if (copiedSlot) {
+                  setCopiedSlot(null);
+                  setPasteHover(null);
+              }
+          }} 
           className="flex flex-col h-[calc(100vh-160px)] bg-slate rounded-2xl border border-gray-800 overflow-hidden relative transition-[background-color] duration-300 select-none"
       >
         
@@ -1057,7 +1080,9 @@ export function DiaryView({
                         <div className="flex items-center gap-2">
                             <ClipboardPaste size={14} className="text-blue-400" />
                             <span className="text-xs font-bold text-blue-400 tracking-wide">
-                                Tap any empty space to paste <span className="opacity-60 font-medium ml-1 hidden sm:inline">(or press Esc)</span>
+                                Tap any empty space to paste 
+                                {/* --- THE FIX 1: Add Right-Click to the instructions --- */}
+                                <span className="opacity-60 font-medium ml-1 hidden sm:inline">(or press Esc / Right-Click to exit)</span>
                             </span>
                         </div>
                         
@@ -1066,11 +1091,11 @@ export function DiaryView({
                                 setCopiedSlot(null);
                                 setPasteHover(null);
                             }}
-                            // Removed all shadow and glow classes, kept the flat status-badge look
                             className="flex items-center gap-1.5 px-3 py-1 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 hover:text-blue-300 text-[10px] uppercase font-black tracking-wider rounded-lg transition-colors"
                         >
                             <X size={12} strokeWidth={3} />
-                            Cancel
+                            {/* --- THE FIX 2: Change "Cancel" to "Exit Copy" --- */}
+                            Exit Copy
                         </button>
                     </div>
                 </motion.div>
@@ -1214,6 +1239,11 @@ export function DiaryView({
                                         onCancelCopy={() => setCopiedSlot(null)}
                                         pasteHover={pasteHover}
                                         setPasteHover={setPasteHover}
+                                        onCancelSelect={() => {
+                                            setIsSelectMode(false);
+                                            setSelectedIds([]);
+                                        }}
+                                        showToast={showToast}
                                     />
                                 );
                             })}

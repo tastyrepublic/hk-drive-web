@@ -35,6 +35,7 @@ interface Props {
   students: any[]; 
   vehicleTypes: string[];
   teacherExamCenters: string[];
+  isPlanningMode: boolean;
 }
 
 // --- NEW UNIVERSAL TIME MATH HELPERS ---
@@ -64,7 +65,8 @@ export function EditLessonModal({
   defaultDoubleLesson = false, 
   students = [],
   vehicleTypes = [],
-  teacherExamCenters = []
+  teacherExamCenters = [],
+  isPlanningMode
 }: Props) {
 
   const { t } = useTranslation();
@@ -109,13 +111,33 @@ export function EditLessonModal({
   const [lessonSnapshot, setLessonSnapshot] = useState<any>(null);
   const [blockSnapshot, setBlockSnapshot] = useState<any>(null);
 
+  // Add this right before your useEffect
+  const initRef = useRef<any>(null);
+
   useEffect(() => {
-    if (isOpen) {
-        let initialCenter = editingSlot?.examCenter || '';
-        let initialLocation = editingSlot?.location || '';
+    // 1. Reset the tracker when the modal closes
+    if (!isOpen) {
+        initRef.current = null;
+        return;
+    }
+
+    if (isOpen && editingSlot) {
+        // --- THE PERFECT MEMORY FIX ---
+        // If we already built the snapshots for this exact slot, stop React from overwriting them!
+        if (initRef.current === editingSlot) return; 
+        initRef.current = editingSlot;
+
+        let initialCenter = editingSlot.examCenter || '';
+        let initialLocation = editingSlot.location || '';
+        let initialType = editingSlot.type || '';
         
-        // --- NEW: Auto-select first exam center and pickup for NEW lessons ---
-        if (!editingSlot?.id && teacherExamCenters?.length > 0) {
+        const isBlock = editingSlot.status === 'Blocked';
+
+        if (!isBlock && vehicleTypes.length > 0 && !vehicleTypes.includes(initialType)) {
+            initialType = primaryVehicle;
+        }
+
+        if (!editingSlot.id && teacherExamCenters?.length > 0) {
             if (!initialCenter) initialCenter = teacherExamCenters[0];
             if (!initialLocation && initialCenter) {
                 const allowedIds = EXAM_CENTER_PICKUPS[initialCenter] || [];
@@ -124,33 +146,66 @@ export function EditLessonModal({
             }
         }
 
-        const initialLessonState = (editingSlot?.status !== 'Blocked') 
-            ? { ...editingSlot, isDouble: editingSlot.isDouble ?? defaultDoubleLesson, examCenter: initialCenter, location: initialLocation } 
-            : {
-                ...editingSlot, 
-                status: 'Open', type: primaryVehicle, studentId: '', isDouble: defaultDoubleLesson, examCenter: initialCenter, location: initialLocation
-            };
+        const lessonIsDouble = isBlock ? !!defaultDoubleLesson : (editingSlot.isDouble ?? !!defaultDoubleLesson);
 
-        if (!vehicleTypes.includes(initialLessonState?.type)) initialLessonState.type = primaryVehicle;
+        const lessonBaseDuration = (!isBlock && editingSlot.duration) 
+            ? editingSlot.duration 
+            : (lessonIsDouble ? lessonDuration * 2 : lessonDuration);
+            
+        const blockBaseDuration = (isBlock && editingSlot.duration) 
+            ? editingSlot.duration 
+            : 60;
 
-        // [CLEANED] Pure Universal Time Math with no legacy fallbacks!
-        const initialBlockState = (editingSlot?.status === 'Blocked')
-            ? {
-                ...editingSlot,
-                endTime: editingSlot.endTime || calculateEndTime(editingSlot.time || '08:00', editingSlot.duration || 60),
-                duration: editingSlot.duration || 60
-              }
-            : {
-                ...editingSlot,
-                status: 'Blocked', type: '', studentId: '', 
-                endTime: calculateEndTime(editingSlot?.time || '08:00', 60),
-                duration: 60, isDouble: false, location: '', examCenter: ''
-            };
+        const lessonBaseEndTime = (!isBlock && editingSlot.endTime) 
+            ? editingSlot.endTime 
+            : calculateEndTime(editingSlot.time || '08:00', lessonBaseDuration);
+            
+        const blockBaseEndTime = (isBlock && editingSlot.endTime) 
+            ? editingSlot.endTime 
+            : calculateEndTime(editingSlot.time || '08:00', blockBaseDuration);
 
-        setLessonSnapshot(initialLessonState);
-        setBlockSnapshot(initialBlockState);
+        const enrichedLesson = {
+            ...editingSlot,
+            status: editingSlot.status !== 'Blocked' 
+                ? (editingSlot.status || 'Open') 
+                : (isPlanningMode ? 'Draft' : 'Open'),
+            type: initialType || primaryVehicle, 
+            examCenter: initialCenter, 
+            location: initialLocation, 
+            isDouble: lessonIsDouble, 
+            duration: lessonBaseDuration,
+            endTime: lessonBaseEndTime,
+            studentId: editingSlot.studentId || ''
+        };
+
+        const enrichedBlock = {
+            ...editingSlot,
+            status: 'Blocked',
+            type: '', 
+            blockReason: editingSlot.blockReason || '',
+            studentId: '',
+            isDouble: false, 
+            examCenter: initialCenter, 
+            location: initialLocation, 
+            duration: blockBaseDuration,
+            endTime: blockBaseEndTime
+        };
+
+        const finalState = isBlock ? enrichedBlock : enrichedLesson;
+
+        if (!editingSlot.id) {
+            const needsSync = Object.keys(finalState).some(key => editingSlot[key] !== (finalState as any)[key]);
+            if (needsSync) {
+                setEditingSlot(finalState);
+                setEditForm(finalState);
+                return; 
+            }
+        }
+
+        setLessonSnapshot(enrichedLesson);
+        setBlockSnapshot(enrichedBlock);
     }
-  }, [isOpen, editingSlot, primaryVehicle, vehicleTypes, defaultDoubleLesson, teacherExamCenters]); // <-- Added teacherExamCenters to dependencies
+  }, [isOpen, editingSlot, primaryVehicle, vehicleTypes, defaultDoubleLesson, teacherExamCenters, lessonDuration, setEditingSlot, setEditForm]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -204,7 +259,7 @@ export function EditLessonModal({
   const isBlockMode = editForm.status === 'Blocked';
     
   const isFormValid = isBlockMode 
-      ? (!!editForm.time && !!editForm.date && !!editForm.endTime && !!editForm.type) 
+      ? (!!editForm.time && !!editForm.date && !!editForm.endTime && !!editForm.blockReason) // <--- CHANGED TO blockReason
       : (!!editForm.time && !!editForm.date && !!editForm.location && !!editForm.type && !!editForm.examCenter); 
 
   // [FIXED] Use the historical base for calculations
@@ -290,7 +345,8 @@ export function EditLessonModal({
           
           <button 
             onClick={onSave} 
-            disabled={saveSlotLoading || !isSlotModified || !isFormValid} 
+            // --- THE FIX: Only require 'isSlotModified' if we are editing an EXISTING slot ---
+            disabled={saveSlotLoading || (isEditing && !isSlotModified) || !isFormValid} 
             className={`h-[48px] min-w-[140px] flex items-center justify-center gap-2 px-6 rounded-xl font-bold text-white transition-all active:scale-[0.98] ${
                 isBlockMode ? 'bg-red-500 hover:bg-red-600' : `${primaryBg} ${primaryHover}`
             } disabled:opacity-50 disabled:cursor-default disabled:active:scale-100 ml-auto`}
@@ -319,20 +375,14 @@ export function EditLessonModal({
         <div className="flex p-1 bg-midnight border border-gray-800 rounded-lg">
            <button 
              onClick={() => {
-                if (lessonSnapshot) {
-                    // --- NEW: Smart status recovery ---
-                    // If it started as a Draft, keep it a Draft!
-                    let safeStatus = lessonSnapshot.status;
+                // Only trigger if we are actually switching from Block -> Lesson
+                if (isBlockMode && lessonSnapshot) {
+                    // 1. Save the current edits into the Block memory
+                    setBlockSnapshot(editForm);
                     
-                    // If it wasn't a draft, then fallback to the standard Booked vs Open logic
-                    if (safeStatus !== 'Draft') {
-                        safeStatus = lessonSnapshot.studentId ? 'Booked' : 'Open';
-                    }
-
+                    // 2. Restore the Lesson memory (but keep the shared date/time)
                     setEditForm({ 
                         ...lessonSnapshot, 
-                        status: safeStatus, 
-                        type: lessonSnapshot.type || primaryVehicle, 
                         date: editForm.date, 
                         time: editForm.time 
                     });
@@ -345,8 +395,17 @@ export function EditLessonModal({
            
            <button 
             onClick={() => {
-               if (blockSnapshot) {
-                   setEditForm({ ...blockSnapshot, date: editForm.date, time: editForm.time, location: '', examCenter: '' });
+               // Only trigger if we are actually switching from Lesson -> Block
+               if (!isBlockMode && blockSnapshot) {
+                   // 1. Save the current edits into the Lesson memory
+                   setLessonSnapshot(editForm);
+                   
+                   // 2. Restore the Block memory (but keep the shared date/time)
+                   setEditForm({ 
+                       ...blockSnapshot, 
+                       date: editForm.date, 
+                       time: editForm.time 
+                   });
                }
             }}
             className={`flex-1 py-2 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-2 ${isBlockMode ? 'bg-red-500 text-white shadow-md' : 'text-textGrey hover:text-white'}`}
@@ -474,9 +533,9 @@ export function EditLessonModal({
                             <button
                                 key={reason.id}
                                 type="button"
-                                onClick={() => handleChange('type', reason.id)}
+                                onClick={() => handleChange('blockReason', reason.id)}
                                 className={`px-3 py-1.5 rounded-md text-xs font-bold border transition-all ${
-                                    editForm.type === reason.id ? 'bg-white text-black border-white' : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'
+                                    editForm.blockReason === reason.id ? 'bg-white text-black border-white' : 'bg-transparent text-textGrey border-gray-800 hover:border-gray-600'
                                 }`}
                             >
                                 {t(reason.label)}
@@ -486,8 +545,8 @@ export function EditLessonModal({
                     <input 
                       type="text" 
                       placeholder={t("Select a reason or type here...")}
-                      value={editForm.type && BLOCK_REASONS.find(r => r.id === editForm.type) ? t(getBlockReasonLabel(editForm.type)) : editForm.type}
-                      onChange={(e) => handleChange('type', e.target.value)}
+                      value={editForm.blockReason && BLOCK_REASONS.find(r => r.id === editForm.blockReason) ? t(getBlockReasonLabel(editForm.blockReason)) : (editForm.blockReason || '')}
+                      onChange={(e) => handleChange('blockReason', e.target.value)}
                       className={`w-full p-3 bg-midnight border border-gray-700 rounded-lg text-white outline-none transition-colors placeholder:text-gray-600 focus:border-red-500`}
                     />
                 </div>

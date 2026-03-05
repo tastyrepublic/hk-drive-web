@@ -114,8 +114,44 @@ export function AutoFillModal({ isOpen, onClose, onGenerate, isGenerating, teach
     }));
   };
 
+  // --- THE FIX: Calculate if the user has tweaked the default settings! ---
+  const hasChanges = useMemo(() => {
+      // Re-calculate what the baseline *should* be
+      let expectedWorkingDays: number[] = [];
+      if (singleDayMode && weekStartDate) {
+          expectedWorkingDays = [weekStartDate.getDay()];
+      } else {
+          expectedWorkingDays = [1, 2, 3, 4, 5].filter(day => !disabledDays.includes(day));
+      }
+      
+      const expectedCenter = teacherExamCenters && teacherExamCenters.length > 0 ? teacherExamCenters[0] : '';
+      const allowedIds = expectedCenter ? (EXAM_CENTER_PICKUPS as any)[expectedCenter] || [] : [];
+      const expectedLocation = allowedIds.length > 0 ? LESSON_LOCATIONS.find(l => allowedIds.includes(l.id))?.label || '' : '';
+      const expectedVehicle = teacherVehicles && teacherVehicles.length > 0 ? teacherVehicles[0] : '1a';
+
+      // Compare the current config against the baseline
+      return config.workingDays.join(',') !== expectedWorkingDays.join(',') ||
+             config.startTime !== '08:00' ||
+             config.endTime !== '18:00' ||
+             config.lessonDuration !== (Number(defaultDuration) || 45) ||
+             config.isDouble !== !!defaultDouble ||
+             config.vehicleType !== expectedVehicle ||
+             config.hasLunch !== true ||
+             config.lunchStart !== '12:30' ||
+             config.lunchEnd !== '13:30' ||
+             config.examCenter !== expectedCenter ||
+             config.location !== expectedLocation;
+  }, [config, singleDayMode, weekStartDate, disabledDays, defaultDuration, defaultDouble, teacherVehicles, teacherExamCenters]);
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={singleDayMode ? "Auto-Fill Day" : "Auto-Fill Settings"} maxWidth="max-w-md">
+    <Modal 
+        isOpen={isOpen} 
+        onClose={onClose} 
+        title={singleDayMode ? "Auto-Fill Day" : "Auto-Fill Settings"} 
+        maxWidth="max-w-md"
+        // --- Activate the Unsaved Changes banner! ---
+        isModified={hasChanges}
+    >
       <div className="space-y-4">
         <p className="text-xs text-textGrey">
             Generate a {singleDayMode ? 'day' : 'week'} of purple drafts. You can review and edit them before publishing to your students.

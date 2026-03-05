@@ -76,8 +76,11 @@ export function BulkEditModal({ isOpen, onClose, selectedIds, slots, onApply, is
               updates.location = location;
           }
       } else if (allBlocked) {
-          if (updateReason) updates.type = reason; // Block reasons are saved in the 'type' field
-      }
+              if (updateReason) {
+                  updates.blockReason = reason; // <--- SAVE TO NEW FIELD
+                  updates.type = '';            // <--- CLEAR LEGACY FIELD
+              }
+          }
 
       await onApply(updates);
   };
@@ -85,8 +88,15 @@ export function BulkEditModal({ isOpen, onClose, selectedIds, slots, onApply, is
   const hasChanges = allLessons ? (updateStatus || updateVehicle || updateLocation) : (allBlocked && updateReason);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Bulk Edit Slots" maxWidth="max-w-md">
-      <div className="space-y-4">
+    <Modal 
+        isOpen={isOpen} 
+        onClose={onClose} 
+        title="Bulk Edit Slots" 
+        maxWidth="max-w-md"
+        // --- THE FIX: Activate the Unsaved Changes banner! ---
+        isModified={hasChanges} 
+    >
+        <div className="space-y-4">
         
         {/* --- DYNAMIC HEADER --- */}
         {isMixed ? (

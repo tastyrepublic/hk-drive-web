@@ -50,7 +50,8 @@ interface LessonForm {
   duration?: number;
   isDouble?: boolean;
   status?: 'Booked' | 'Blocked' | 'Open';
-  examCenter?: string; 
+  examCenter?: string;
+  blockReason?: string; 
 }
 
 interface Props {
@@ -110,6 +111,8 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
   const [editForm, setEditForm] = useState<LessonForm>({ 
       date: '', time: '', location: '', type: DEFAULT_VEHICLE_ID, examCenter: '' 
   });
+
+  const [isPlanningMode, setIsPlanningMode] = useState(false);
 
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
   const [studentForm, setStudentForm] = useState({ 
@@ -176,20 +179,32 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
             endTime: slot.endTime,
             duration: slot.duration,
             type: slot.type || '', isDouble: slot.isDouble || false, status: slot.status || 'Booked',
-            examCenter: slot.examCenter || '' 
+            examCenter: slot.examCenter || '',
+            blockReason: slot.blockReason || '' 
         });
     } else {
         if (!slot.date) {
             setEditForm({
                 date: '', time: '', location: '', type: preferredVehicle, studentId: '', isDouble: profile.defaultDoubleLesson ?? false,
                 status: slot.status || 'Booked', examCenter: '',
+                blockReason: '',
                 endTime: undefined, duration: undefined 
             });
         } else {
             setEditForm(prev => ({
-                ...prev, id: undefined, studentId: '', date: slot.date, time: slot.time, location: '', type: preferredVehicle,
-                isDouble: profile.defaultDoubleLesson ?? false, status: slot.status || 'Booked', examCenter: '',
-                endTime: undefined, duration: undefined 
+                ...prev, 
+                id: undefined, 
+                studentId: slot.studentId || '', 
+                date: slot.date, 
+                time: slot.time, 
+                location: slot.location || '', 
+                type: slot.type || preferredVehicle,
+                isDouble: slot.isDouble ?? profile.defaultDoubleLesson ?? false, 
+                status: slot.status || 'Booked', 
+                examCenter: slot.examCenter || '',
+                blockReason: slot.blockReason || '',
+                endTime: slot.endTime, 
+                duration: slot.duration 
             }));
         }
     }
@@ -197,19 +212,20 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
   
   const isBlockMode = editForm.status === 'Blocked';
   const isFormValid = isBlockMode 
-    ? (!!editForm.date && !!editForm.time && !!editForm.type) 
+    ? (!!editForm.date && !!editForm.time && !!editForm.blockReason) 
     : (!!editForm.date && !!editForm.time && !!editForm.location && !!editForm.type && !!editForm.examCenter); 
 
-  const hasChanges = !editingSlot?.id ? true : ( 
+  // --- THE FIX: Stop forcing `true` for new slots. Let it naturally compare the fields. ---
+  const hasChanges = !editingSlot ? false : ( 
       editForm.date !== editingSlot.date || editForm.time !== editingSlot.time || 
       (editForm.location || '') !== (editingSlot.location || '') || 
       (editForm.studentId || '') !== (editingSlot.studentId || '') || 
-      (editForm.type || '') !== (editingSlot.type || '') || 
+      (editForm.type || '') !== (editingSlot.type || '') ||
+      (editForm.blockReason || '') !== (editingSlot.blockReason || '') || 
       (editForm.status || 'Booked') !== (editingSlot.status || 'Booked') || 
       (!!editForm.isDouble) !== (!!editingSlot.isDouble) || 
       (editForm.endTime || '') !== (editingSlot.endTime || '') ||
       (editForm.duration || 0) !== (editingSlot.duration || 0) ||
-      
       (editForm.examCenter || '') !== (editingSlot.examCenter || '') 
   );
 
@@ -419,6 +435,7 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
           studentId: copiedSlot.studentId || '',
           location: copiedSlot.location || '',
           type: copiedSlot.type || '',
+          blockReason: copiedSlot.blockReason || '',
           isDouble: copiedSlot.isDouble || false,
           status: copiedSlot.status, // Explicitly pass the status so Drafts stay Drafts
           examCenter: copiedSlot.examCenter || ''
@@ -514,7 +531,9 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
                     <Route path="/diary" element={
                         <DiaryView 
                           isDark={theme === 'dark'}  
-                          slots={processedSlots} 
+                          slots={processedSlots}
+                          isPlanningMode={isPlanningMode}
+                          setIsPlanningMode={setIsPlanningMode} 
                           setEditingSlot={handleSetEditingSlot} 
                           lessonDuration={Number(profile?.lessonDuration) || 45} 
                           onPublishDrafts={handlePublishDrafts} 
@@ -580,6 +599,7 @@ export function TeacherDashboard({ user, theme, toggleTheme, showToast }: Props)
         lessonDuration={Number(profile?.lessonDuration) || 45} defaultDoubleLesson={!!profile?.defaultDoubleLesson} 
         students={students} vehicleTypes={profile?.vehicleTypes && profile.vehicleTypes.length > 0 ? profile.vehicleTypes : []}
         teacherExamCenters={profile?.defaultExamCenters || []}
+        isPlanningMode={isPlanningMode}
       />
       
       <StudentFormModal 

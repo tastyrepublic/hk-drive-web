@@ -1,4 +1,5 @@
 import { Edit2, User, CheckCircle2, Ban, Smartphone } from 'lucide-react';
+import { BLOCK_REASONS } from '../../constants/list';
 
 export function DiaryCard({ slot, setEditingSlot }: any) { 
   // 1. Determine Status
@@ -85,7 +86,7 @@ export function DiaryCard({ slot, setEditingSlot }: any) {
                <span className="text-[9px] font-bold uppercase">Blocked</span>
             </div>
             <div className="text-[12px] font-black leading-tight truncate">
-               {slot.type || 'Personal'}
+               {BLOCK_REASONS.find(r => r.id === slot.blockReason)?.label || slot.blockReason || 'Personal'}
             </div>
           </>
         ) : (
